@@ -1,0 +1,32 @@
+# Build outputs
+Debug/
+Release/
+build/
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.o
+*.d
+*.su
+
+# STM32CubeIDE / Eclipse
+.metadata/
+.settings/
+.project
+.cproject
+.mxproject
+*.launch
+
+# User-specific files
+*.user
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
