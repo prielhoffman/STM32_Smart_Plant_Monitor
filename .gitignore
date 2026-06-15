@@ -2,6 +2,9 @@
 Debug/
 Release/
 build/
+**/Debug/
+**/Release/
+**/build/
 *.elf
 *.bin
 *.hex
@@ -11,13 +14,8 @@ build/
 *.d
 *.su
 
-# STM32CubeIDE / Eclipse
+# Eclipse / CubeIDE workspace files
 .metadata/
-.settings/
-.project
-.cproject
-.mxproject
-*.launch
 
 # User-specific files
 *.user
