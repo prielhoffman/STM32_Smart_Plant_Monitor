@@ -1,6 +1,7 @@
 #include "stm32g071xx.h"
 #include "stm32g071xx_gpio_driver.h"
 #include "stm32g071xx_usart_driver.h"
+#include "stm32g071xx_adc_driver.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -152,9 +153,24 @@ static void UART_Log(const char *msg){
 	USART_SendData(&g_usart2_handle, (uint8_t *)msg, strlen(msg));
 }
 
+static void ADC_GPIO_Init(void){
+	GPIO_Handle_t adc_gpio;
+
+	adc_gpio.pGPIOx = GPIOA;
+
+	adc_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_0;
+	adc_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ANALOG;
+	adc_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_LOW;
+	adc_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
+	adc_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+	adc_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0;
+
+	GPIO_Init(&adc_gpio);
+}
+
 /* Print the current system state over UART */
 static void Log_CurrentState(SystemState_t state){
-	UART_Log("[STATE]");
+	UART_Log("[STATE] ");
 	UART_Log(SystemState_ToString(state));
 	UART_Log("\r\n");
 }
@@ -180,7 +196,10 @@ int main(void)
     USART2_GPIO_Init();
     USART2_Debug_Init();
 
-    UART_Log("[INIT] Smart Plant Care Monitor started\r\n");
+    ADC_GPIO_Init();
+    ADC_Init();
+
+    UART_Log("[ADC] ADC initialized and ready\r\n");
 
     g_current_state = SYSTEM_STATE_INIT;
     Log_CurrentState(g_current_state);
@@ -196,9 +215,9 @@ int main(void)
         switch (g_current_state)
         {
             case SYSTEM_STATE_READ_SENSORS:
-            	g_plant_data.soil_raw = 1000;
-            	g_plant_data.light_raw = 3200;
-            	UART_Log("[SENSORS] Simulated sensor values updated\r\n");
+            	g_plant_data.soil_raw = 2100;
+            	g_plant_data.light_raw = ADC_ReadChannel(ADC_CHANNEL_0);
+            	UART_Log("[SENSORS] Soil simulated, light ADC updated\r\n");
 
                 g_current_state = SYSTEM_STATE_PROCESS_DATA;
                 break;

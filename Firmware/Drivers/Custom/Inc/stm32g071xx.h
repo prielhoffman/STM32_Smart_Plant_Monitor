@@ -300,6 +300,29 @@ typedef struct{
     volatile uint32_t CALIB;
 } SysTick_RegDef_t;
 
+typedef struct
+{
+    __vo uint32_t ISR;        /* ADC interrupt and status register,       offset 0x00 */
+    __vo uint32_t IER;        /* ADC interrupt enable register,           offset 0x04 */
+    __vo uint32_t CR;         /* ADC control register,                    offset 0x08 */
+    __vo uint32_t CFGR1;      /* ADC configuration register 1,            offset 0x0C */
+    __vo uint32_t CFGR2;      /* ADC configuration register 2,            offset 0x10 */
+    __vo uint32_t SMPR;       /* ADC sampling time register,              offset 0x14 */
+
+    uint32_t RESERVED0[2];    /* Reserved,                                offsets 0x18-0x1C */
+
+    __vo uint32_t TR;         /* ADC watchdog threshold register,         offset 0x20 */
+
+    uint32_t RESERVED1;       /* Reserved,                                offset 0x24 */
+
+    __vo uint32_t CHSELR;     /* ADC channel selection register,          offset 0x28 */
+
+    uint32_t RESERVED2[5];    /* Reserved,                                offsets 0x2C-0x3C */
+
+    __vo uint32_t DR;         /* ADC data register,                       offset 0x40 */
+
+} ADC_RegDef_t;
+
 /* ------------------------------------------------------------
  * Peripheral definitions
  * ------------------------------------------------------------ */
@@ -327,6 +350,8 @@ typedef struct{
 #define USART4    					((USART_RegDef_t*)USART4_BASEADDR)
 #define USART5    					((USART_RegDef_t*)USART5_BASEADDR)
 #define USART6    					((USART_RegDef_t*)USART6_BASEADDR)
+
+#define ADC                         ((ADC_RegDef_t*) ADC_BASEADDR)
 
 /* ------------------------------------------------------------
  * Clock enable macros
@@ -392,6 +417,8 @@ typedef struct{
 #define USART4_PCLK_DI()    		(RCC->APBENR1 &= ~(1U << 19))
 #define USART5_PCLK_DI()    		(RCC->APBENR1 &= ~(1U << 8))
 #define USART6_PCLK_DI()    		(RCC->APBENR1 &= ~(1U << 9))
+
+#define ADC_PCLK_DI()               (RCC->APBENR2 &= ~(1U << 20))
 
 /* ------------------------------------------------------------
  * Peripheral reset macros
@@ -598,6 +625,44 @@ typedef struct{
 #define USART_READY                 0U
 #define USART_BUSY_IN_RX            1U
 #define USART_BUSY_IN_TX            2U
+
+/* ------------------------------------------------------------
+ * ADC bit position definitions
+ * ------------------------------------------------------------ */
+
+/* ADC_ISR bits */
+#define ADC_ISR_ADRDY               0U
+#define ADC_ISR_EOC                 2U
+#define ADC_ISR_EOS                 3U
+#define ADC_ISR_OVR                 4U
+#define ADC_ISR_EOCAL               11U
+#define ADC_ISR_CCRDY               13U
+
+/* ADC_CR bits */
+#define ADC_CR_ADEN                 0U
+#define ADC_CR_ADDIS                1U
+#define ADC_CR_ADSTART              2U
+#define ADC_CR_ADSTP                4U
+#define ADC_CR_ADVREGEN             28U
+#define ADC_CR_ADCAL                31U
+
+/* ADC_CFGR1 bits */
+#define ADC_CFGR1_RES               3U
+#define ADC_CFGR1_ALIGN             5U
+#define ADC_CFGR1_CONT              13U
+
+/* ADC_SMPR bits */
+#define ADC_SMPR_SMP1               0U
+
+/* ADC_CHSELR bits */
+#define ADC_CHSELR_CHSEL0           0U
+
+/* ADC flags */
+#define ADC_ADRDY_FLAG              (1U << ADC_ISR_ADRDY)
+#define ADC_EOC_FLAG                (1U << ADC_ISR_EOC)
+#define ADC_EOS_FLAG                (1U << ADC_ISR_EOS)
+#define ADC_EOCAL_FLAG              (1U << ADC_ISR_EOCAL)
+#define ADC_CCRDY_FLAG              (1U << ADC_ISR_CCRDY)
 
 /* ------------------------------------------------------------
  * RCC bit position definitions
