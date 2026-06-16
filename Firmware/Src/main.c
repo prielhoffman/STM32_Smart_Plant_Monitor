@@ -8,19 +8,24 @@
 #include <stdio.h>
 
 /*
- * Calibration thresholds based on initial sensor measurements.
+ * Sensor calibration values based on initial hardware measurements.
  *
  * Soil sensor:
+ * - Wet touch: around 1100
  * - Air / dry: around 2650
- * - Wet touch: around 1020-1040
  * Higher raw value means drier soil.
  *
  * Light sensor:
- * - Covered: around 1560-1610
- * - Room daylight: around 2715-2730
- * - Direct flashlight: around 3780-3800
- * Lower raw value means less light.
+ * - Covered: around 1560
+ * - Direct flashlight: around 3800
+ * Higher raw value means more light.
  */
+#define SOIL_WET_RAW            1100U
+#define SOIL_DRY_RAW            2650U
+
+#define LIGHT_DARK_RAW          1560U
+#define LIGHT_BRIGHT_RAW        3800U
+
 #define SOIL_DRY_THRESHOLD      2300U
 #define LIGHT_LOW_THRESHOLD     1800U
 
@@ -53,6 +58,10 @@ typedef struct
 {
     uint16_t soil_raw;
     uint16_t light_raw;
+
+    uint8_t soil_percent;
+    uint8_t light_percent;
+
     PlantStatus_t plant_status;
 } PlantMonitorData_t;
 
@@ -100,6 +109,43 @@ static const char *PlantStatus_ToString(PlantStatus_t status){
         default:
             return "UNKNOWN";
 	}
+}
+
+static uint8_t ConvertRawToPercent(uint16_t raw_value, uint16_t raw_min, uint16_t raw_max){
+	if (raw_value <= raw_min){
+		return 0U;
+	}
+	if (raw_value >= raw_max){
+		return 100U;
+	}
+	return (uint8_t)(((uint32_t)(raw_value - raw_min) * 100U) / (raw_max - raw_min));
+}
+
+/*
+ * Calculate the plant status based on calibrated sensor thresholds.
+ *
+ * Soil:
+ * - Higher raw value means drier soil.
+ *
+ * Light:
+ * - Lower raw value means less light.
+ */
+static PlantStatus_t PlantMonitor_CalculateStatus(const PlantMonitorData_t *data){
+    uint8_t is_soil_low = (data->soil_raw > SOIL_DRY_THRESHOLD);
+    uint8_t is_light_low = (data->light_raw < LIGHT_LOW_THRESHOLD);
+
+    if (is_soil_low && is_light_low){
+        return PLANT_STATUS_LOW_SOIL_AND_LIGHT;
+    }
+    else if (is_soil_low){
+        return PLANT_STATUS_LOW_SOIL;
+    }
+    else if (is_light_low){
+        return PLANT_STATUS_LOW_LIGHT;
+    }
+    else{
+        return PLANT_STATUS_OK;
+    }
 }
 
 /*
@@ -244,21 +290,13 @@ int main(void)
                 g_current_state = SYSTEM_STATE_PROCESS_DATA;
                 break;
 
-            case SYSTEM_STATE_PROCESS_DATA:{
-            	if (g_plant_data.soil_raw > SOIL_DRY_THRESHOLD && g_plant_data.light_raw < LIGHT_LOW_THRESHOLD){
-            		g_plant_data.plant_status = PLANT_STATUS_LOW_SOIL_AND_LIGHT;
-            	}
-            	else if (g_plant_data.soil_raw > SOIL_DRY_THRESHOLD){
-            		g_plant_data.plant_status = PLANT_STATUS_LOW_SOIL;
-            	}
-            	else if (g_plant_data.light_raw < LIGHT_LOW_THRESHOLD){
-            		g_plant_data.plant_status = PLANT_STATUS_LOW_LIGHT;
-            	}
-            	else{
-            		g_plant_data.plant_status = PLANT_STATUS_OK;
-            	}
+            case SYSTEM_STATE_PROCESS_DATA:
+            {
+                g_plant_data.light_percent = ConvertRawToPercent(g_plant_data.light_raw, LIGHT_DARK_RAW, LIGHT_BRIGHT_RAW);
+                g_plant_data.soil_percent = 100U - ConvertRawToPercent(g_plant_data.soil_raw, SOIL_WET_RAW, SOIL_DRY_RAW);
 
-            	UART_Log("[PROCESS] Plant status updated\r\n");
+                g_plant_data.plant_status = PlantMonitor_CalculateStatus(&g_plant_data);
+                UART_Log("[PROCESS] Plant status updated\r\n");
 
                 g_current_state = SYSTEM_STATE_UPDATE_ALERTS;
                 break;
@@ -282,12 +320,8 @@ int main(void)
             {
                 char log_buffer[100];
 
-                snprintf(log_buffer,
-                         sizeof(log_buffer),
-                         "[LOG] soil_raw=%u, light_raw=%u, status=%s\r\n",
-                         g_plant_data.soil_raw,
-                         g_plant_data.light_raw,
-                         PlantStatus_ToString(g_plant_data.plant_status));
+                snprintf(log_buffer, sizeof(log_buffer), "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, status=%s\r\n",
+                         g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent, PlantStatus_ToString(g_plant_data.plant_status));
 
                 UART_Log(log_buffer);
 
