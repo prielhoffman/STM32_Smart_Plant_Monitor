@@ -158,13 +158,18 @@ static void ADC_GPIO_Init(void){
 
 	adc_gpio.pGPIOx = GPIOA;
 
-	adc_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_0;
 	adc_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ANALOG;
 	adc_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_LOW;
 	adc_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
 	adc_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
 	adc_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0;
 
+    /* PA0 -> ADC channel 0, LDR light sensor */
+	adc_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_0;
+	GPIO_Init(&adc_gpio);
+
+    /* PA1 -> ADC channel 1, soil moisture sensor */
+	adc_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_1;
 	GPIO_Init(&adc_gpio);
 }
 
@@ -215,9 +220,9 @@ int main(void)
         switch (g_current_state)
         {
             case SYSTEM_STATE_READ_SENSORS:
-            	g_plant_data.soil_raw = 2100;
+            	g_plant_data.soil_raw = ADC_ReadChannel(ADC_CHANNEL_1);
             	g_plant_data.light_raw = ADC_ReadChannel(ADC_CHANNEL_0);
-            	UART_Log("[SENSORS] Soil simulated, light ADC updated\r\n");
+            	UART_Log("[SENSORS] Soil and light ADC updated\r\n");
 
                 g_current_state = SYSTEM_STATE_PROCESS_DATA;
                 break;
