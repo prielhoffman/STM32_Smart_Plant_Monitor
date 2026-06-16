@@ -29,6 +29,15 @@
 #define SOIL_DRY_THRESHOLD      2300U
 #define LIGHT_LOW_THRESHOLD     1800U
 
+#define RED_LED_GPIO_PORT       GPIOA
+#define RED_LED_GPIO_PIN        GPIO_PIN_NO_10
+
+#define YELLOW_LED_GPIO_PORT    GPIOB
+#define YELLOW_LED_GPIO_PIN     GPIO_PIN_NO_3
+
+#define GREEN_LED_GPIO_PORT     GPIOB
+#define GREEN_LED_GPIO_PIN      GPIO_PIN_NO_5
+
 typedef enum
 {
     SYSTEM_STATE_INIT = 0,
@@ -243,6 +252,61 @@ static void Log_CurrentState(SystemState_t state){
 	UART_Log("\r\n");
 }
 
+static void AlertLEDs_GPIO_Init(void)
+{
+    GPIO_Handle_t led_gpio;
+
+    led_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_OUT;
+    led_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+    led_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_LOW;
+    led_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
+
+    /* Red LED - PA10 */
+    led_gpio.pGPIOx = RED_LED_GPIO_PORT;
+    led_gpio.GPIO_PinConfig.GPIO_PinNumber = RED_LED_GPIO_PIN;
+    GPIO_Init(&led_gpio);
+
+    /* Yellow LED - PB3 */
+    led_gpio.pGPIOx = YELLOW_LED_GPIO_PORT;
+    led_gpio.GPIO_PinConfig.GPIO_PinNumber = YELLOW_LED_GPIO_PIN;
+    GPIO_Init(&led_gpio);
+
+    /* Green LED - PB5 */
+    led_gpio.pGPIOx = GREEN_LED_GPIO_PORT;
+    led_gpio.GPIO_PinConfig.GPIO_PinNumber = GREEN_LED_GPIO_PIN;
+    GPIO_Init(&led_gpio);
+
+    GPIO_WriteToOutputPin(RED_LED_GPIO_PORT, RED_LED_GPIO_PIN, GPIO_PIN_RESET);
+    GPIO_WriteToOutputPin(YELLOW_LED_GPIO_PORT, YELLOW_LED_GPIO_PIN, GPIO_PIN_RESET);
+    GPIO_WriteToOutputPin(GREEN_LED_GPIO_PORT, GREEN_LED_GPIO_PIN, GPIO_PIN_RESET);
+}
+
+static void AlertLEDs_Update(PlantStatus_t status){
+    GPIO_WriteToOutputPin(RED_LED_GPIO_PORT, RED_LED_GPIO_PIN, GPIO_PIN_RESET);
+    GPIO_WriteToOutputPin(YELLOW_LED_GPIO_PORT, YELLOW_LED_GPIO_PIN, GPIO_PIN_RESET);
+    GPIO_WriteToOutputPin(GREEN_LED_GPIO_PORT, GREEN_LED_GPIO_PIN, GPIO_PIN_RESET);
+
+    switch(status){
+    	case PLANT_STATUS_OK:
+    		GPIO_WriteToOutputPin(GREEN_LED_GPIO_PORT, GREEN_LED_GPIO_PIN, GPIO_PIN_SET);
+    		break;
+
+    	case PLANT_STATUS_LOW_SOIL:
+    	case PLANT_STATUS_LOW_LIGHT:
+    		GPIO_WriteToOutputPin(YELLOW_LED_GPIO_PORT, YELLOW_LED_GPIO_PIN, GPIO_PIN_SET);
+    		break;
+
+    	case PLANT_STATUS_LOW_SOIL_AND_LIGHT:
+    	case PLANT_STATUS_SENSOR_ERROR:
+    		GPIO_WriteToOutputPin(RED_LED_GPIO_PORT, RED_LED_GPIO_PIN, GPIO_PIN_SET);
+    		break;
+
+        default:
+            GPIO_WriteToOutputPin(RED_LED_GPIO_PORT, RED_LED_GPIO_PIN, GPIO_PIN_SET);
+            break;
+    }
+}
+
 int main(void)
 {
     /*
@@ -263,6 +327,8 @@ int main(void)
 
     USART2_GPIO_Init();
     USART2_Debug_Init();
+
+    AlertLEDs_GPIO_Init();
 
     ADC_GPIO_Init();
     ADC_Init();
@@ -303,6 +369,8 @@ int main(void)
             }
 
             case SYSTEM_STATE_UPDATE_ALERTS:
+            	AlertLEDs_Update(g_plant_data.plant_status);
+
                 UART_Log("[ALERT] Plant status = ");
                 UART_Log(PlantStatus_ToString(g_plant_data.plant_status));
                 UART_Log("\r\n");
