@@ -7,6 +7,23 @@
 #include <string.h>
 #include <stdio.h>
 
+/*
+ * Calibration thresholds based on initial sensor measurements.
+ *
+ * Soil sensor:
+ * - Air / dry: around 2650
+ * - Wet touch: around 1020-1040
+ * Higher raw value means drier soil.
+ *
+ * Light sensor:
+ * - Covered: around 1560-1610
+ * - Room daylight: around 2715-2730
+ * - Direct flashlight: around 3780-3800
+ * Lower raw value means less light.
+ */
+#define SOIL_DRY_THRESHOLD      2300U
+#define LIGHT_LOW_THRESHOLD     1800U
+
 typedef enum
 {
     SYSTEM_STATE_INIT = 0,
@@ -228,13 +245,13 @@ int main(void)
                 break;
 
             case SYSTEM_STATE_PROCESS_DATA:{
-            	if (g_plant_data.soil_raw < 1800 && g_plant_data.light_raw < 1800){
+            	if (g_plant_data.soil_raw > SOIL_DRY_THRESHOLD && g_plant_data.light_raw < LIGHT_LOW_THRESHOLD){
             		g_plant_data.plant_status = PLANT_STATUS_LOW_SOIL_AND_LIGHT;
             	}
-            	else if (g_plant_data.soil_raw < 1800){
+            	else if (g_plant_data.soil_raw > SOIL_DRY_THRESHOLD){
             		g_plant_data.plant_status = PLANT_STATUS_LOW_SOIL;
             	}
-            	else if (g_plant_data.light_raw < 1800){
+            	else if (g_plant_data.light_raw < LIGHT_LOW_THRESHOLD){
             		g_plant_data.plant_status = PLANT_STATUS_LOW_LIGHT;
             	}
             	else{
