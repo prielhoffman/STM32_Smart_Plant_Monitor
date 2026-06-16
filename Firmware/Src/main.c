@@ -309,23 +309,7 @@ static void AlertLEDs_Update(PlantStatus_t status){
 
 int main(void)
 {
-    /*
-     * LD2 on the NUCLEO-G071RB board is connected to PA5.
-     * This test verifies that the custom GPIO driver can configure and toggle a GPIO output pin.
-     */
-    GPIO_Handle_t led_gpio;
-
-    led_gpio.pGPIOx = GPIOA;
-    led_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_5;
-    led_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_OUT;
-    led_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_VERY_LOW;
-    led_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
-    led_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
-    led_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0;
-
-    GPIO_Init(&led_gpio);
-
-    USART2_GPIO_Init();
+	USART2_GPIO_Init();
     USART2_Debug_Init();
 
     AlertLEDs_GPIO_Init();
@@ -342,9 +326,7 @@ int main(void)
 
     while (1)
     {
-        GPIO_ToggleOutputPin(GPIOA, GPIO_PIN_NO_5);
-
-        Log_CurrentState(g_current_state);
+    	Log_CurrentState(g_current_state);
 
         switch (g_current_state)
         {
