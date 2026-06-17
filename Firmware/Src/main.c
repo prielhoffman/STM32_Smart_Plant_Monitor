@@ -2,6 +2,8 @@
 #include "stm32g071xx_gpio_driver.h"
 #include "stm32g071xx_usart_driver.h"
 #include "stm32g071xx_adc_driver.h"
+#include "stm32g071xx_i2c_driver.h"
+#include "lcd_i2c.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -37,6 +39,8 @@
 
 #define GREEN_LED_GPIO_PORT     GPIOB
 #define GREEN_LED_GPIO_PIN      GPIO_PIN_NO_5
+
+#define LCD_I2C_ADDR            0x27U
 
 typedef enum
 {
@@ -75,6 +79,7 @@ typedef struct
 } PlantMonitorData_t;
 
 static USART_Handle_t g_usart2_handle;
+static I2C_Handle_t g_i2c1_handle;
 static PlantMonitorData_t g_plant_data;
 static SystemState_t g_current_state = SYSTEM_STATE_INIT;
 
@@ -118,6 +123,31 @@ static const char *PlantStatus_ToString(PlantStatus_t status){
         default:
             return "UNKNOWN";
 	}
+}
+
+/* Convert plant status enum to user-friendly text for the 16x2 LCD */
+static const char *PlantStatus_ToLCDString(PlantStatus_t status)
+{
+    switch (status)
+    {
+        case PLANT_STATUS_OK:
+            return "I'm happy :)";
+
+        case PLANT_STATUS_LOW_SOIL:
+            return "Water me!";
+
+        case PLANT_STATUS_LOW_LIGHT:
+            return "Too dark!";
+
+        case PLANT_STATUS_LOW_SOIL_AND_LIGHT:
+            return "Help me!";
+
+        case PLANT_STATUS_SENSOR_ERROR:
+            return "Check sensors";
+
+        default:
+            return "Unknown state";
+    }
 }
 
 static uint8_t ConvertRawToPercent(uint16_t raw_value, uint16_t raw_min, uint16_t raw_max){
@@ -245,6 +275,40 @@ static void ADC_GPIO_Init(void){
 	GPIO_Init(&adc_gpio);
 }
 
+static void I2C1_GPIO_Init(void){
+	GPIO_Handle_t I2CPins;
+	memset(&I2CPins, 0, sizeof(I2CPins));
+
+	I2CPins.pGPIOx = GPIOB;
+
+	I2CPins.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ALTFN;
+	I2CPins.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_LOW;
+	I2CPins.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_PU;
+	I2CPins.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_OD;
+	I2CPins.GPIO_PinConfig.GPIO_PinAltFunMode = 6U;
+
+	/* PB8 -> I2C1_SCL */
+	I2CPins.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_8;
+	GPIO_Init(&I2CPins);
+
+	 /* PB9 -> I2C1_SDA */
+	I2CPins.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_9;
+	GPIO_Init(&I2CPins);
+}
+
+static void I2C1_LCD_Init(void){
+    memset(&g_i2c1_handle, 0, sizeof(g_i2c1_handle));
+
+    g_i2c1_handle.pI2Cx = I2C1;
+
+    g_i2c1_handle.I2CConfig.I2C_SCLSpeed = I2C_SCL_SPEED_SM;
+    g_i2c1_handle.I2CConfig.I2C_DeviceAddress = 0x61U;
+    g_i2c1_handle.I2CConfig.I2C_ACKControl = I2C_ACK_ENABLE;
+    g_i2c1_handle.I2CConfig.I2C_FMDutyCycle = I2C_FM_DUTY_2;
+
+    I2C_Init(&g_i2c1_handle);
+}
+
 /* Print the current system state over UART */
 static void Log_CurrentState(SystemState_t state){
 	UART_Log("[STATE] ");
@@ -307,12 +371,55 @@ static void AlertLEDs_Update(PlantStatus_t status){
     }
 }
 
+static void LCD_UpdateDisplay(void){
+	static uint8_t lcd_page = 0U;
+	static uint8_t lcd_page_counter = 0U;
+
+	char line1[17];
+	char line2[17];
+
+	if (lcd_page == 0U){
+        snprintf(line1, sizeof(line1), "Moisture:%3u%%", g_plant_data.soil_percent);
+        snprintf(line2, sizeof(line2), "Light:%2u%%", g_plant_data.light_percent);
+	}
+	else{
+        snprintf(line1, sizeof(line1), "Plant says:");
+        snprintf(line2, sizeof(line2), "%-16s", PlantStatus_ToLCDString(g_plant_data.plant_status));
+	}
+
+    LCD_SetCursor(0, 0);
+    LCD_Print(line1);
+
+    LCD_SetCursor(1, 0);
+    LCD_Print(line2);
+
+	lcd_page_counter++;
+
+	if (lcd_page_counter >= 7U){
+		lcd_page_counter = 0U;
+
+		if (lcd_page == 0U){
+			lcd_page = 1U;
+		}
+		else{
+			lcd_page = 0U;
+		}
+	}
+
+
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
     USART2_Debug_Init();
 
     AlertLEDs_GPIO_Init();
+
+    I2C1_GPIO_Init();
+    I2C1_LCD_Init();
+
+    LCD_Init(&g_i2c1_handle, LCD_I2C_ADDR);
 
     ADC_GPIO_Init();
     ADC_Init();
@@ -361,7 +468,9 @@ int main(void)
                 break;
 
             case SYSTEM_STATE_UPDATE_DISPLAY:
-                UART_Log("[DISPLAY] LCD update skipped - not connected yet\r\n");
+            	LCD_UpdateDisplay();
+
+                UART_Log("[DISPLAY] LCD updated\r\n");
 
                 g_current_state = SYSTEM_STATE_PRINT_LOG;
                 break;
