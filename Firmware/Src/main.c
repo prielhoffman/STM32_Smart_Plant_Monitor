@@ -82,6 +82,7 @@ static USART_Handle_t g_usart2_handle;
 static I2C_Handle_t g_i2c1_handle;
 static PlantMonitorData_t g_plant_data;
 static SystemState_t g_current_state = SYSTEM_STATE_INIT;
+static uint8_t g_lcd_page = 0U;
 
 /* Convert system state enum to readable text for UART logs */
 static const char *SystemState_ToString(SystemState_t state){
@@ -123,6 +124,10 @@ static const char *PlantStatus_ToString(PlantStatus_t status){
         default:
             return "UNKNOWN";
 	}
+}
+
+static void short_delay(void){
+    for (volatile uint32_t i = 0; i < 50000; i++);
 }
 
 /* Convert plant status enum to user-friendly text for the 16x2 LCD */
@@ -275,6 +280,39 @@ static void ADC_GPIO_Init(void){
 	GPIO_Init(&adc_gpio);
 }
 
+static void UserButton_GPIO_Init(void){
+    GPIO_Handle_t button_gpio;
+
+    button_gpio.pGPIOx = GPIOC;
+    button_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_13;
+    button_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_IN;
+    button_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_LOW;
+    button_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
+    button_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+    button_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0;
+
+    GPIO_Init(&button_gpio);
+}
+
+static uint8_t UserButton_WasPressed(void){
+	static uint8_t last_button_state = GPIO_PIN_SET;
+
+	uint8_t current_button_state = GPIO_ReadFromInputPin(GPIOC, GPIO_PIN_NO_13);
+	uint8_t was_pressed = 0U;
+
+    /*
+     * The onboard user button is active-low:
+     * Released = SET
+     * Pressed = RESET
+     * Detect only the transition from released to pressed.
+     */
+	if ((last_button_state == GPIO_PIN_SET) && (current_button_state == GPIO_PIN_RESET)){
+		was_pressed = 1U;
+	}
+	last_button_state = current_button_state;
+	return was_pressed;
+}
+
 static void I2C1_GPIO_Init(void){
 	GPIO_Handle_t I2CPins;
 	memset(&I2CPins, 0, sizeof(I2CPins));
@@ -372,41 +410,41 @@ static void AlertLEDs_Update(PlantStatus_t status){
 }
 
 static void LCD_UpdateDisplay(void){
-	static uint8_t lcd_page = 0U;
-	static uint8_t lcd_page_counter = 0U;
+    char line1[17];
+    char line2[17];
 
-	char line1[17];
-	char line2[17];
-
-	if (lcd_page == 0U){
-        snprintf(line1, sizeof(line1), "Moisture:%3u%%", g_plant_data.soil_percent);
-        snprintf(line2, sizeof(line2), "Light:%2u%%", g_plant_data.light_percent);
-	}
-	else{
-        snprintf(line1, sizeof(line1), "Plant says:");
+    if (g_lcd_page == 0U){
+        snprintf(line1, sizeof(line1), "Moisture:%3u%%   ", g_plant_data.soil_percent);
+        snprintf(line2, sizeof(line2), "Light:%3u%%      ", g_plant_data.light_percent);
+    }
+    else{
+        snprintf(line1, sizeof(line1), "%-16s", "Plant says:");
         snprintf(line2, sizeof(line2), "%-16s", PlantStatus_ToLCDString(g_plant_data.plant_status));
-	}
+    }
 
     LCD_SetCursor(0, 0);
     LCD_Print(line1);
 
     LCD_SetCursor(1, 0);
     LCD_Print(line2);
+}
 
-	lcd_page_counter++;
-
-	if (lcd_page_counter >= 7U){
-		lcd_page_counter = 0U;
-
-		if (lcd_page == 0U){
-			lcd_page = 1U;
+static void LCD_HandlePageButton(void){
+	if (UserButton_WasPressed()){
+		if (g_lcd_page == 0U){
+			g_lcd_page = 1U;
 		}
 		else{
-			lcd_page = 0U;
+			g_lcd_page = 0U;
 		}
+
+        /*
+         * Update the LCD immediately after changing the page,
+         * so the user sees the result of the button press right away.
+         */
+        LCD_UpdateDisplay();
+        UART_Log("[BUTTON] LCD page changed\r\n");
 	}
-
-
 }
 
 int main(void)
@@ -415,6 +453,7 @@ int main(void)
     USART2_Debug_Init();
 
     AlertLEDs_GPIO_Init();
+    UserButton_GPIO_Init();
 
     I2C1_GPIO_Init();
     I2C1_LCD_Init();
@@ -489,12 +528,17 @@ int main(void)
             }
 
             case SYSTEM_STATE_WAIT:
+            {
                 UART_Log("[WAIT] Waiting before next measurement cycle\r\n");
 
-                delay();
+                for (uint8_t i = 0; i < 10U; i++){
+                    LCD_HandlePageButton();
+                    short_delay();
+                }
 
                 g_current_state = SYSTEM_STATE_READ_SENSORS;
                 break;
+            }
 
             default:
                 g_current_state = SYSTEM_STATE_READ_SENSORS;
