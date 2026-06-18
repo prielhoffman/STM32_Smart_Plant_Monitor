@@ -449,6 +449,24 @@ static void LCD_HandlePageButton(void){
 	}
 }
 
+static void BME280_Calibration_Test(void){
+    BME280_CalibData_t calib_data;
+    char log_buffer[120];
+
+    UART_Log("[BME280] Reading calibration data\r\n");
+
+    if (BME280_ReadCalibrationData(&calib_data)){
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] T1=%u, T2=%d, T3=%d\r\n", calib_data.dig_T1, calib_data.dig_T2, calib_data.dig_T3);
+        UART_Log(log_buffer);
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] H1=%u, H2=%d, H3=%u, H4=%d, H5=%d, H6=%d\r\n", calib_data.dig_H1, calib_data.dig_H2, calib_data.dig_H3, calib_data.dig_H4, calib_data.dig_H5, calib_data.dig_H6);
+        UART_Log(log_buffer);
+        UART_Log("[BME280] Calibration data read successfully\r\n");
+    }
+    else{
+        UART_Log("[BME280] Calibration data read failed\r\n");
+    }
+}
+
 static void BME280_ChipID_Test(void){
     uint8_t chip_id = 0U;
     char log_buffer[80];
@@ -464,6 +482,7 @@ static void BME280_ChipID_Test(void){
 
         if (chip_id == BME280_CHIP_ID_VALUE){
             UART_Log("[BME280] Sensor detected successfully\r\n");
+            BME280_Calibration_Test();
         }
         else{
             UART_Log("[BME280] Unexpected chip ID\r\n");
