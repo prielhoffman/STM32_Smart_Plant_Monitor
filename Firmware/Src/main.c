@@ -4,6 +4,7 @@
 #include "stm32g071xx_adc_driver.h"
 #include "stm32g071xx_i2c_driver.h"
 #include "lcd_i2c.h"
+#include "bme280.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -41,6 +42,7 @@
 #define GREEN_LED_GPIO_PIN      GPIO_PIN_NO_5
 
 #define LCD_I2C_ADDR            0x27U
+#define BME280_I2C_ADDR         0x76U
 
 typedef enum
 {
@@ -447,6 +449,31 @@ static void LCD_HandlePageButton(void){
 	}
 }
 
+static void BME280_ChipID_Test(void){
+    uint8_t chip_id = 0U;
+    char log_buffer[80];
+
+    BME280_Init(&g_i2c1_handle, BME280_I2C_ADDR);
+
+    UART_Log("[BME280] Reading chip ID via driver\r\n");
+
+    if (BME280_ReadChipID(&chip_id)){
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] addr=0x%02X, chip_id=0x%02X\r\n", BME280_I2C_ADDR, chip_id);
+
+        UART_Log(log_buffer);
+
+        if (chip_id == BME280_CHIP_ID_VALUE){
+            UART_Log("[BME280] Sensor detected successfully\r\n");
+        }
+        else{
+            UART_Log("[BME280] Unexpected chip ID\r\n");
+        }
+    }
+    else{
+        UART_Log("[BME280] Chip ID read failed\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -459,6 +486,8 @@ int main(void)
     I2C1_LCD_Init();
 
     LCD_Init(&g_i2c1_handle, LCD_I2C_ADDR);
+
+    BME280_ChipID_Test();
 
     ADC_GPIO_Init();
     ADC_Init();
