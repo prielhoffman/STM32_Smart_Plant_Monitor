@@ -43,6 +43,7 @@
 
 #define LCD_I2C_ADDR            0x27U
 #define BME280_I2C_ADDR         0x76U
+#define LCD_PAGE_COUNT          3U
 
 typedef enum
 {
@@ -423,9 +424,19 @@ static void LCD_UpdateDisplay(void){
         snprintf(line1, sizeof(line1), "Moisture:%3u%%   ", g_plant_data.soil_percent);
         snprintf(line2, sizeof(line2), "Light:%3u%%      ", g_plant_data.light_percent);
     }
-    else{
+    else if (g_lcd_page == 1U){
         snprintf(line1, sizeof(line1), "%-16s", "Plant says:");
         snprintf(line2, sizeof(line2), "%-16s", PlantStatus_ToLCDString(g_plant_data.plant_status));
+    }
+    else{
+        if (g_plant_data.bme280_is_available){
+            snprintf(line1, sizeof(line1), "Temp:%2ld.%02ldC   ", g_plant_data.air_temperature_c_x100 / 100, g_plant_data.air_temperature_c_x100 % 100);
+            snprintf(line2, sizeof(line2), "Hum:%2lu.%02lu%%    ", g_plant_data.air_humidity_percent_x100 / 100U, g_plant_data.air_humidity_percent_x100 % 100U);
+        }
+        else{
+            snprintf(line1, sizeof(line1), "%-16s", "Env sensor:");
+            snprintf(line2, sizeof(line2), "%-16s", "Not available");
+        }
     }
 
     LCD_SetCursor(0, 0);
@@ -436,21 +447,21 @@ static void LCD_UpdateDisplay(void){
 }
 
 static void LCD_HandlePageButton(void){
-	if (UserButton_WasPressed()){
-		if (g_lcd_page == 0U){
-			g_lcd_page = 1U;
-		}
-		else{
-			g_lcd_page = 0U;
-		}
+    if (UserButton_WasPressed()){
+        g_lcd_page++;
+
+        if (g_lcd_page >= LCD_PAGE_COUNT){
+            g_lcd_page = 0U;
+        }
 
         /*
          * Update the LCD immediately after changing the page,
          * so the user sees the result of the button press right away.
          */
         LCD_UpdateDisplay();
+
         UART_Log("[BUTTON] LCD page changed\r\n");
-	}
+    }
 }
 
 static void BME280_Application_Init(void){
