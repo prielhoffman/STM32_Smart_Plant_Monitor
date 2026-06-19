@@ -493,6 +493,34 @@ static void BME280_ChipID_Test(void){
     }
 }
 
+static void BME280_RawData_Test(void){
+    BME280_RawData_t raw_data;
+    char log_buffer[120];
+
+    UART_Log("[BME280] Configuring measurement mode\r\n");
+
+    if (!BME280_ConfigureMeasurement()){
+        UART_Log("[BME280] Measurement configuration failed\r\n");
+        return;
+    }
+
+    UART_Log("[BME280] Reading raw data\r\n");
+
+    if (BME280_ReadRawData(&raw_data)){
+        snprintf(log_buffer,
+                 sizeof(log_buffer),
+                 "[BME280] raw_temp=%ld, raw_hum=%ld, raw_press=%ld\r\n",
+                 raw_data.raw_temperature,
+                 raw_data.raw_humidity,
+                 raw_data.raw_pressure);
+
+        UART_Log(log_buffer);
+    }
+    else{
+        UART_Log("[BME280] Raw data read failed\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -507,6 +535,7 @@ int main(void)
     LCD_Init(&g_i2c1_handle, LCD_I2C_ADDR);
 
     BME280_ChipID_Test();
+    BME280_RawData_Test();
 
     ADC_GPIO_Init();
     ADC_Init();

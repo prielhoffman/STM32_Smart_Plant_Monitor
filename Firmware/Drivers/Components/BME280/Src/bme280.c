@@ -10,6 +10,13 @@
 #define BME280_CALIB_00_LEN     26U
 #define BME280_HUM_CALIB_LEN    7U
 
+#define BME280_REG_CTRL_HUM     0xF2U
+#define BME280_REG_CTRL_MEAS    0xF4U
+#define BME280_REG_CONFIG       0xF5U
+#define BME280_REG_PRESS_MSB    0xF7U
+
+#define BME280_RAW_DATA_LEN     8U
+
 static I2C_Handle_t *g_bme280_i2c_handle = NULL;
 static uint8_t g_bme280_i2c_addr  = 0U;
 
@@ -27,6 +34,19 @@ static uint8_t BME280_ReadRegisters(uint8_t start_reg_addr, uint8_t *data, uint8
     I2C_MasterReceiveData(g_bme280_i2c_handle,data,length,g_bme280_i2c_addr);
 
     return 1U;
+}
+
+static uint8_t BME280_WriteRegister(uint8_t reg_addr, uint8_t data){
+	uint8_t tx_buffer[2];
+
+	if (g_bme280_i2c_handle == NULL){
+		return 0U;
+	}
+
+	tx_buffer[0] = reg_addr;
+	tx_buffer[1] = data;
+
+	I2C_MasterSendData(g_bme280_i2c_handle, tx_buffer, 2U, g_bme280_i2c_addr);
 }
 
 static uint8_t BME280_ReadRegister(uint8_t reg_addr, uint8_t *data){
@@ -97,6 +117,60 @@ uint8_t BME280_ReadCalibrationData(BME280_CalibData_t *calib_data){
     calib_data->dig_H5 = (int16_t)(((int16_t)((int8_t)hum_calib[5]) << 4) | (hum_calib[4] >> 4));
 
     calib_data->dig_H6 = (int8_t)hum_calib[6];
+
+    return 1U;
+}
+
+uint8_t BME280_ConfigureMeasurement(void){
+    /*
+     * Humidity oversampling x1.
+     * This must be written before ctrl_meas according to the BME280 flow.
+     */
+    if (!BME280_WriteRegister(BME280_REG_CTRL_HUM, 0x01U)){
+        return 0U;
+    }
+
+    /*
+     * Temperature oversampling x1, pressure oversampling x1, normal mode.
+     * osrs_t = x1  -> bits 7:5 = 001
+     * osrs_p = x1  -> bits 4:2 = 001
+     * mode   = normal -> bits 1:0 = 11
+     * 001 001 11 = 0x27
+     */
+    if (!BME280_WriteRegister(BME280_REG_CTRL_MEAS, 0x27U)){
+        return 0U;
+    }
+
+    /*
+     * Basic config:
+     * standby time 1000 ms, filter off.
+     * This is fine for a slow plant monitor.
+     */
+    if (!BME280_WriteRegister(BME280_REG_CONFIG, 0xA0U)){
+        return 0U;
+    }
+
+    return 1U;
+}
+
+uint8_t BME280_ReadRawData(BME280_RawData_t *raw_data){
+    uint8_t data[BME280_RAW_DATA_LEN];
+
+    if (raw_data == NULL){
+        return 0U;
+    }
+
+    if (!BME280_ReadRegisters(BME280_REG_PRESS_MSB, data, BME280_RAW_DATA_LEN)){
+        return 0U;
+    }
+
+    /*
+     * Raw pressure and raw temperature are 20-bit values.
+     * Raw humidity is a 16-bit value.
+     */
+    raw_data->raw_pressure = (int32_t)(((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4)  | ((uint32_t)data[2] >> 4));
+    raw_data->raw_temperature = (int32_t)(((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4)  | ((uint32_t)data[5] >> 4));
+    raw_data->raw_humidity = (int32_t)(((uint32_t)data[6] << 8) | ((uint32_t)data[7]));
 
     return 1U;
 }
