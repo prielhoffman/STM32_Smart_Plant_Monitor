@@ -77,6 +77,10 @@ typedef struct
     uint8_t soil_percent;
     uint8_t light_percent;
 
+    int32_t air_temperature_c_x100;
+    uint32_t air_humidity_percent_x100;
+    uint8_t bme280_is_available;
+
     PlantStatus_t plant_status;
 } PlantMonitorData_t;
 
@@ -449,99 +453,58 @@ static void LCD_HandlePageButton(void){
 	}
 }
 
-static void BME280_Calibration_Test(void){
-    BME280_CalibData_t calib_data;
-    char log_buffer[120];
-
-    UART_Log("[BME280] Reading calibration data\r\n");
-
-    if (BME280_ReadCalibrationData(&calib_data)){
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] T1=%u, T2=%d, T3=%d\r\n", calib_data.dig_T1, calib_data.dig_T2, calib_data.dig_T3);
-        UART_Log(log_buffer);
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] H1=%u, H2=%d, H3=%u, H4=%d, H5=%d, H6=%d\r\n", calib_data.dig_H1, calib_data.dig_H2, calib_data.dig_H3, calib_data.dig_H4, calib_data.dig_H5, calib_data.dig_H6);
-        UART_Log(log_buffer);
-        UART_Log("[BME280] Calibration data read successfully\r\n");
-    }
-    else{
-        UART_Log("[BME280] Calibration data read failed\r\n");
-    }
-}
-
-static void BME280_ChipID_Test(void){
+static void BME280_Application_Init(void){
     uint8_t chip_id = 0U;
-    char log_buffer[80];
+    BME280_CalibData_t calib_data;
 
     BME280_Init(&g_i2c1_handle, BME280_I2C_ADDR);
 
-    UART_Log("[BME280] Reading chip ID via driver\r\n");
+    UART_Log("[BME280] Initializing environmental sensor\r\n");
 
-    if (BME280_ReadChipID(&chip_id)){
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] addr=0x%02X, chip_id=0x%02X\r\n", BME280_I2C_ADDR, chip_id);
-
-        UART_Log(log_buffer);
-
-        if (chip_id == BME280_CHIP_ID_VALUE){
-            UART_Log("[BME280] Sensor detected successfully\r\n");
-            BME280_Calibration_Test();
-        }
-        else{
-            UART_Log("[BME280] Unexpected chip ID\r\n");
-        }
-    }
-    else{
+    if (!BME280_ReadChipID(&chip_id)){
         UART_Log("[BME280] Chip ID read failed\r\n");
-    }
-}
-
-static void BME280_RawData_Test(void){
-    BME280_RawData_t raw_data;
-    char log_buffer[120];
-
-    UART_Log("[BME280] Configuring measurement mode\r\n");
-
-    if (!BME280_ConfigureMeasurement()){
-        UART_Log("[BME280] Measurement configuration failed\r\n");
+        g_plant_data.bme280_is_available = 0U;
         return;
     }
 
-    UART_Log("[BME280] Reading raw data\r\n");
+    if (chip_id != BME280_CHIP_ID_VALUE){
+        UART_Log("[BME280] Unexpected chip ID\r\n");
+        g_plant_data.bme280_is_available = 0U;
+        return;
+    }
 
-    if (BME280_ReadRawData(&raw_data)){
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] raw_temp=%ld, raw_hum=%ld, raw_press=%ld\r\n", raw_data.raw_temperature, raw_data.raw_humidity, raw_data.raw_pressure);
-        UART_Log(log_buffer);
+    UART_Log("[BME280] Sensor detected successfully\r\n");
+
+    if (!BME280_ReadCalibrationData(&calib_data)){
+        UART_Log("[BME280] Calibration data read failed\r\n");
+        g_plant_data.bme280_is_available = 0U;
+        return;
     }
-    else{
-        UART_Log("[BME280] Raw data read failed\r\n");
+
+    if (!BME280_ConfigureMeasurement()){
+        UART_Log("[BME280] Measurement configuration failed\r\n");
+        g_plant_data.bme280_is_available = 0U;
+        return;
     }
+
+    g_plant_data.bme280_is_available = 1U;
+    UART_Log("[BME280] Environmental sensor ready\r\n");
 }
 
-static void BME280_Temperature_Test(void){
-    BME280_CompensatedData_t comp_data;
-    char log_buffer[100];
+static void BME280_ReadEnvironment(void){
+    BME280_CompensatedData_t env_data;
 
-    UART_Log("[BME280] Reading compensated temperature\r\n");
+    if (g_plant_data.bme280_is_available == 0U){
+        return;
+    }
 
-    if (BME280_ReadTemperature(&comp_data)){
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] temp=%ld.%02ldC\r\n", comp_data.temperature_c_x100 / 100, comp_data.temperature_c_x100 % 100);
-        UART_Log(log_buffer);
+    if (BME280_ReadTemperatureHumidity(&env_data)){
+        g_plant_data.air_temperature_c_x100 = env_data.temperature_c_x100;
+        g_plant_data.air_humidity_percent_x100 = env_data.humidity_percent_x100;
     }
     else{
-        UART_Log("[BME280] Temperature read failed\r\n");
-    }
-}
-
-static void BME280_TemperatureHumidity_Test(void){
-    BME280_CompensatedData_t comp_data;
-    char log_buffer[120];
-
-    UART_Log("[BME280] Reading compensated temperature and humidity\r\n");
-
-    if (BME280_ReadTemperatureHumidity(&comp_data)){
-        snprintf(log_buffer, sizeof(log_buffer), "[BME280] temp=%ld.%02ldC, hum=%lu.%02lu%%\r\n", comp_data.temperature_c_x100 / 100, comp_data.temperature_c_x100 % 100, comp_data.humidity_percent_x100 / 100U, comp_data.humidity_percent_x100 % 100U);
-        UART_Log(log_buffer);
-    }
-    else{
-        UART_Log("[BME280] Temperature/humidity read failed\r\n");
+        UART_Log("[BME280] Environment read failed\r\n");
+        g_plant_data.bme280_is_available = 0U;
     }
 }
 
@@ -558,10 +521,7 @@ int main(void)
 
     LCD_Init(&g_i2c1_handle, LCD_I2C_ADDR);
 
-    BME280_ChipID_Test();
-    BME280_RawData_Test();
-    BME280_Temperature_Test();
-    BME280_TemperatureHumidity_Test();
+    BME280_Application_Init();
 
     ADC_GPIO_Init();
     ADC_Init();
@@ -582,7 +542,9 @@ int main(void)
             case SYSTEM_STATE_READ_SENSORS:
             	g_plant_data.soil_raw = ADC_ReadChannel(ADC_CHANNEL_1);
             	g_plant_data.light_raw = ADC_ReadChannel(ADC_CHANNEL_0);
-            	UART_Log("[SENSORS] Soil and light ADC updated\r\n");
+            	BME280_ReadEnvironment();
+
+            	UART_Log("[SENSORS] Soil, light and environment updated\r\n");
 
                 g_current_state = SYSTEM_STATE_PROCESS_DATA;
                 break;
@@ -619,10 +581,24 @@ int main(void)
 
             case SYSTEM_STATE_PRINT_LOG:
             {
-                char log_buffer[100];
+                char log_buffer[160];
 
-                snprintf(log_buffer, sizeof(log_buffer), "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, status=%s\r\n",
-                         g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent, PlantStatus_ToString(g_plant_data.plant_status));
+                if (g_plant_data.bme280_is_available){
+                    snprintf(log_buffer, sizeof(log_buffer),
+                             "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, temp=%ld.%02ldC, hum=%lu.%02lu%%, status=%s\r\n",
+                             g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent,
+                             g_plant_data.air_temperature_c_x100 / 100,
+                             g_plant_data.air_temperature_c_x100 % 100,
+                             g_plant_data.air_humidity_percent_x100 / 100U,
+                             g_plant_data.air_humidity_percent_x100 % 100U,
+                             PlantStatus_ToString(g_plant_data.plant_status));
+                }
+                else{
+                    snprintf(log_buffer, sizeof(log_buffer),
+                             "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, env=N/A, status=%s\r\n",
+                             g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent,
+                             PlantStatus_ToString(g_plant_data.plant_status));
+                }
 
                 UART_Log(log_buffer);
 
