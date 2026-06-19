@@ -19,6 +19,12 @@
 
 static I2C_Handle_t *g_bme280_i2c_handle = NULL;
 static uint8_t g_bme280_i2c_addr  = 0U;
+static BME280_CalibData_t g_bme280_calib_data;
+static int32_t g_bme280_t_fine;
+
+static BME280_CalibData_t g_bme280_calib_data;
+static int32_t g_bme280_t_fine = 0;
+static uint8_t g_bme280_calib_loaded = 0U;
 
 static uint8_t BME280_ReadRegisters(uint8_t start_reg_addr, uint8_t *data, uint8_t length) {
     if ((g_bme280_i2c_handle == NULL) || (data == NULL) || (length == 0U)) {
@@ -118,6 +124,9 @@ uint8_t BME280_ReadCalibrationData(BME280_CalibData_t *calib_data){
 
     calib_data->dig_H6 = (int8_t)hum_calib[6];
 
+    g_bme280_calib_data = *calib_data;
+    g_bme280_calib_loaded = 1U;
+
     return 1U;
 }
 
@@ -173,4 +182,39 @@ uint8_t BME280_ReadRawData(BME280_RawData_t *raw_data){
     raw_data->raw_humidity = (int32_t)(((uint32_t)data[6] << 8) | ((uint32_t)data[7]));
 
     return 1U;
+}
+
+static int32_t BME280_CompensateTemperature(int32_t raw_temperature){
+    int32_t var1;
+    int32_t var2;
+    int32_t temperature;
+
+    /*
+     * Temperature compensation formula sourced from the BME280 Datasheet.
+     * This uses 32-bit integer arithmetic to return temperature in Celsius x100.
+     * Example: 2534 represents 25.34°C.
+     */
+    var1 = ((((raw_temperature >> 3) - ((int32_t)g_bme280_calib_data.dig_T1 << 1))) * ((int32_t)g_bme280_calib_data.dig_T2)) >> 11;
+    var2 = (((((raw_temperature >> 4) - ((int32_t)g_bme280_calib_data.dig_T1)) * ((raw_temperature >> 4) - ((int32_t)g_bme280_calib_data.dig_T1))) >> 12) * ((int32_t)g_bme280_calib_data.dig_T3)) >> 14;
+    g_bme280_t_fine = var1 + var2;
+    temperature = (g_bme280_t_fine * 5 + 128) >> 8;
+
+    return temperature;
+}
+
+uint8_t BME280_ReadTemperature(BME280_CompensatedData_t *comp_data){
+	BME280_RawData_t raw_data;
+
+	if (comp_data == NULL){
+		return 0U;
+	}
+	if (g_bme280_calib_loaded == 0U){
+		return 0U;
+	}
+	if (!BME280_ReadRawData(&raw_data)){
+		return 0U;
+	}
+
+	comp_data->temperature_c_x100 = BME280_CompensateTemperature(raw_data.raw_temperature);
+	return 1U;
 }

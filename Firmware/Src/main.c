@@ -521,6 +521,26 @@ static void BME280_RawData_Test(void){
     }
 }
 
+static void BME280_Temperature_Test(void){
+    BME280_CompensatedData_t comp_data;
+    char log_buffer[100];
+
+    UART_Log("[BME280] Reading compensated temperature\r\n");
+
+    if (BME280_ReadTemperature(&comp_data)){
+        snprintf(log_buffer,
+                 sizeof(log_buffer),
+                 "[BME280] temp=%ld.%02ldC\r\n",
+                 comp_data.temperature_c_x100 / 100,
+                 comp_data.temperature_c_x100 % 100);
+
+        UART_Log(log_buffer);
+    }
+    else{
+        UART_Log("[BME280] Temperature read failed\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -536,6 +556,7 @@ int main(void)
 
     BME280_ChipID_Test();
     BME280_RawData_Test();
+    BME280_Temperature_Test();
 
     ADC_GPIO_Init();
     ADC_Init();
