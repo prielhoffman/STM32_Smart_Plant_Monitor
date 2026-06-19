@@ -507,13 +507,7 @@ static void BME280_RawData_Test(void){
     UART_Log("[BME280] Reading raw data\r\n");
 
     if (BME280_ReadRawData(&raw_data)){
-        snprintf(log_buffer,
-                 sizeof(log_buffer),
-                 "[BME280] raw_temp=%ld, raw_hum=%ld, raw_press=%ld\r\n",
-                 raw_data.raw_temperature,
-                 raw_data.raw_humidity,
-                 raw_data.raw_pressure);
-
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] raw_temp=%ld, raw_hum=%ld, raw_press=%ld\r\n", raw_data.raw_temperature, raw_data.raw_humidity, raw_data.raw_pressure);
         UART_Log(log_buffer);
     }
     else{
@@ -528,16 +522,26 @@ static void BME280_Temperature_Test(void){
     UART_Log("[BME280] Reading compensated temperature\r\n");
 
     if (BME280_ReadTemperature(&comp_data)){
-        snprintf(log_buffer,
-                 sizeof(log_buffer),
-                 "[BME280] temp=%ld.%02ldC\r\n",
-                 comp_data.temperature_c_x100 / 100,
-                 comp_data.temperature_c_x100 % 100);
-
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] temp=%ld.%02ldC\r\n", comp_data.temperature_c_x100 / 100, comp_data.temperature_c_x100 % 100);
         UART_Log(log_buffer);
     }
     else{
         UART_Log("[BME280] Temperature read failed\r\n");
+    }
+}
+
+static void BME280_TemperatureHumidity_Test(void){
+    BME280_CompensatedData_t comp_data;
+    char log_buffer[120];
+
+    UART_Log("[BME280] Reading compensated temperature and humidity\r\n");
+
+    if (BME280_ReadTemperatureHumidity(&comp_data)){
+        snprintf(log_buffer, sizeof(log_buffer), "[BME280] temp=%ld.%02ldC, hum=%lu.%02lu%%\r\n", comp_data.temperature_c_x100 / 100, comp_data.temperature_c_x100 % 100, comp_data.humidity_percent_x100 / 100U, comp_data.humidity_percent_x100 % 100U);
+        UART_Log(log_buffer);
+    }
+    else{
+        UART_Log("[BME280] Temperature/humidity read failed\r\n");
     }
 }
 
@@ -557,6 +561,7 @@ int main(void)
     BME280_ChipID_Test();
     BME280_RawData_Test();
     BME280_Temperature_Test();
+    BME280_TemperatureHumidity_Test();
 
     ADC_GPIO_Init();
     ADC_Init();

@@ -37,6 +37,7 @@ typedef struct{
 
 typedef struct{
     int32_t temperature_c_x100;
+    uint32_t humidity_percent_x100;
 } BME280_CompensatedData_t;
 
 void BME280_Init(I2C_Handle_t *pI2CHandle, uint8_t device_addr);
@@ -45,5 +46,6 @@ uint8_t BME280_ReadCalibrationData(BME280_CalibData_t *calib_data);
 uint8_t BME280_ConfigureMeasurement(void);
 uint8_t BME280_ReadRawData(BME280_RawData_t *raw_data);
 uint8_t BME280_ReadTemperature(BME280_CompensatedData_t *comp_data);
+uint8_t BME280_ReadTemperatureHumidity(BME280_CompensatedData_t *comp_data);
 
 #endif

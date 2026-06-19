@@ -218,3 +218,65 @@ uint8_t BME280_ReadTemperature(BME280_CompensatedData_t *comp_data){
 	comp_data->temperature_c_x100 = BME280_CompensateTemperature(raw_data.raw_temperature);
 	return 1U;
 }
+
+static uint32_t BME280_CompensateHumidity(int32_t raw_humidity){
+    int32_t v_x1_u32r;
+    uint32_t humidity_q1024;
+    uint32_t humidity_x100;
+
+    /*
+     * Humidity compensation formula sourced from the BME280 Datasheet.
+     * This calculation depends on g_bme280_t_fine,
+     * which is updated by BME280_CompensateTemperature().
+     */
+    v_x1_u32r = g_bme280_t_fine - 76800;
+
+    v_x1_u32r = (((((raw_humidity << 14) - ((int32_t)g_bme280_calib_data.dig_H4 << 20) - ((int32_t)g_bme280_calib_data.dig_H5 * v_x1_u32r)) +
+           16384) >> 15) * (((((((v_x1_u32r * (int32_t)g_bme280_calib_data.dig_H6) >> 10) * (((v_x1_u32r * (int32_t)g_bme280_calib_data.dig_H3) >> 11) +
+               32768)) >> 10) +  2097152) * (int32_t)g_bme280_calib_data.dig_H2 + 8192) >> 14));
+
+    v_x1_u32r = v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * (int32_t)g_bme280_calib_data.dig_H1) >> 4);
+
+    if (v_x1_u32r < 0){
+        v_x1_u32r = 0;
+    }
+
+    if (v_x1_u32r > 419430400){
+        v_x1_u32r = 419430400;
+    }
+
+    /*
+     * After shifting by 12, the result is humidity in %RH x1024.
+     * Convert it to %RH x100 for easier printing and storage.
+     */
+    humidity_q1024 = (uint32_t)(v_x1_u32r >> 12);
+    humidity_x100 = (humidity_q1024 * 100U) / 1024U;
+
+    return humidity_x100;
+}
+
+uint8_t BME280_ReadTemperatureHumidity(BME280_CompensatedData_t *comp_data){
+    BME280_RawData_t raw_data;
+
+    if (comp_data == NULL){
+        return 0U;
+    }
+
+    if (g_bme280_calib_loaded == 0U){
+        return 0U;
+    }
+
+    if (!BME280_ReadRawData(&raw_data)){
+        return 0U;
+    }
+
+    /*
+     * Temperature must be compensated first because it updates t_fine.
+     * Humidity compensation depends on t_fine.
+     */
+    comp_data->temperature_c_x100 = BME280_CompensateTemperature(raw_data.raw_temperature);
+
+    comp_data->humidity_percent_x100 = BME280_CompensateHumidity(raw_data.raw_humidity);
+
+    return 1U;
+}
