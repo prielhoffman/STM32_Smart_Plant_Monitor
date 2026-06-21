@@ -3,9 +3,11 @@
 #include "stm32g071xx_usart_driver.h"
 #include "stm32g071xx_adc_driver.h"
 #include "stm32g071xx_i2c_driver.h"
+#include "stm32g071xx_spi_driver.h"
 #include "lcd_i2c.h"
 #include "bme280.h"
 #include "ds3231.h"
+#include "sd_card.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -47,6 +49,9 @@
 #define LCD_PAGE_COUNT          3U
 
 #define DS3231_I2C_ADDR         0x68U
+
+#define SD_CS_GPIO_PORT         GPIOA
+#define SD_CS_GPIO_PIN          GPIO_PIN_NO_4
 
 typedef enum
 {
@@ -93,6 +98,7 @@ typedef struct
 
 static USART_Handle_t g_usart2_handle;
 static I2C_Handle_t g_i2c1_handle;
+static SPI_Handle_t g_spi1_handle;
 static PlantMonitorData_t g_plant_data;
 static SystemState_t g_current_state = SYSTEM_STATE_INIT;
 static uint8_t g_lcd_page = 0U;
@@ -416,10 +422,6 @@ static void LCD_UpdateDisplay(void){
         snprintf(line2, sizeof(line2), "Light:%3u%%      ", g_plant_data.light_percent);
     }
     else if (g_lcd_page == 1U){
-        snprintf(line1, sizeof(line1), "%-16s", "Plant says:");
-        snprintf(line2, sizeof(line2), "%-16s", PlantStatus_ToLCDString(g_plant_data.plant_status));
-    }
-    else{
         if (g_plant_data.bme280_is_available){
             snprintf(line1, sizeof(line1), "Temp:%2ld.%02ldC   ", g_plant_data.air_temperature_c_x100 / 100, g_plant_data.air_temperature_c_x100 % 100);
             snprintf(line2, sizeof(line2), "Hum:%2lu.%02lu%%    ", g_plant_data.air_humidity_percent_x100 / 100U, g_plant_data.air_humidity_percent_x100 % 100U);
@@ -428,6 +430,10 @@ static void LCD_UpdateDisplay(void){
             snprintf(line1, sizeof(line1), "%-16s", "Env sensor:");
             snprintf(line2, sizeof(line2), "%-16s", "Not available");
         }
+    }
+    else{
+        snprintf(line1, sizeof(line1), "%-16s", "Plant says:");
+        snprintf(line2, sizeof(line2), "%-16s", PlantStatus_ToLCDString(g_plant_data.plant_status));
     }
 
     LCD_SetCursor(0, 0);
@@ -544,6 +550,116 @@ static void DS3231_ReadTimestamp(void){
     }
 }
 
+static void SPI1_GPIO_Init(void){
+    GPIO_Handle_t spi_gpio;
+
+    memset(&spi_gpio, 0, sizeof(spi_gpio));
+
+    spi_gpio.pGPIOx = GPIOA;
+    spi_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ALTFN;
+    spi_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_HIGH;
+    spi_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
+    spi_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+
+    /*
+     * STM32G071:
+     * PA5 = SPI1_SCK
+     * PA6 = SPI1_MISO
+     * PA7 = SPI1_MOSI
+     * On STM32G071 these SPI1 pins use AF0
+     */
+    spi_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0U;
+
+    /* PA5 -> SPI1_SCK */
+    spi_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_5;
+    GPIO_Init(&spi_gpio);
+
+    /* PA6 -> SPI1_MISO */
+    spi_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_6;
+    GPIO_Init(&spi_gpio);
+
+    /* PA7 -> SPI1_MOSI */
+    spi_gpio.GPIO_PinConfig.GPIO_PinNumber = GPIO_PIN_NO_7;
+    GPIO_Init(&spi_gpio);
+}
+
+static void SD_CS_GPIO_Init(void){
+    GPIO_Handle_t cs_gpio;
+
+    memset(&cs_gpio, 0, sizeof(cs_gpio));
+
+    cs_gpio.pGPIOx = SD_CS_GPIO_PORT;
+    cs_gpio.GPIO_PinConfig.GPIO_PinNumber = SD_CS_GPIO_PIN;
+    cs_gpio.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_OUT;
+    cs_gpio.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_HIGH;
+    cs_gpio.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD;
+    cs_gpio.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+    cs_gpio.GPIO_PinConfig.GPIO_PinAltFunMode = 0U;
+
+    GPIO_Init(&cs_gpio);
+
+    /*
+     * CS is active-low
+     * Keep the card deselected when we are not talking to it
+     */
+    GPIO_WriteToOutputPin(SD_CS_GPIO_PORT, SD_CS_GPIO_PIN, GPIO_PIN_SET);
+}
+
+static void SPI1_SD_Init(void){
+    memset(&g_spi1_handle, 0, sizeof(g_spi1_handle));
+
+    g_spi1_handle.pSPIx = SPI1;
+
+    /*
+     * SD card initialization should start with a slow SPI clock
+     * DIV256 is slow and safe for bring-up
+     */
+    g_spi1_handle.SPIConfig.SPI_DeviceMode = SPI_DEVICE_MODE_MASTER;
+    g_spi1_handle.SPIConfig.SPI_BusConfig = SPI_BUS_CONFIG_FD;
+    g_spi1_handle.SPIConfig.SPI_SclkSpeed = SPI_SCLK_SPEED_DIV256;
+    g_spi1_handle.SPIConfig.SPI_DataSize = SPI_DS_8BITS;
+    g_spi1_handle.SPIConfig.SPI_CPOL = SPI_CPOL_LOW;
+    g_spi1_handle.SPIConfig.SPI_CPHA = SPI_CPHA_LOW;
+    g_spi1_handle.SPIConfig.SPI_SSM = SPI_SSM_EN;
+
+    SPI_Init(&g_spi1_handle);
+    SPI_PeripheralControl(SPI1, ENABLE);
+}
+
+static void SD_CMD0_Test(void)
+{
+    uint8_t response = 0xFFU;
+    char log_buffer[80];
+
+    UART_Log("[SD] Initializing SPI interface\r\n");
+
+    SPI1_GPIO_Init();
+    SD_CS_GPIO_Init();
+    SPI1_SD_Init();
+
+    SD_Card_Init(&g_spi1_handle, SD_CS_GPIO_PORT, SD_CS_GPIO_PIN);
+
+    UART_Log("[SD] Sending CMD0\r\n");
+
+    response = SD_Card_SendCMD0();
+
+    snprintf(log_buffer,
+             sizeof(log_buffer),
+             "[SD] CMD0 response = 0x%02X\r\n",
+             response);
+
+    UART_Log(log_buffer);
+
+    if (response == SD_CMD0_RESPONSE_IDLE_STATE)
+    {
+        UART_Log("[SD] CMD0 OK - card entered idle state\r\n");
+    }
+    else
+    {
+        UART_Log("[SD] CMD0 failed - card did not enter idle state\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -559,6 +675,7 @@ int main(void)
 
     BME280_Application_Init();
     DS3231_Application_Init();
+    SD_CMD0_Test();
 
     ADC_GPIO_Init();
     ADC_Init();

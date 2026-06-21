@@ -66,4 +66,4 @@ uint8_t DS3231_GetDateTime(DS3231_DateTime_t *date_time);
  */
 uint8_t DS3231_SetDateTime(const DS3231_DateTime_t *date_time);
 
-#endif /* DS3231_H_ */
+#endif
