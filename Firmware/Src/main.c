@@ -5,6 +5,7 @@
 #include "stm32g071xx_i2c_driver.h"
 #include "lcd_i2c.h"
 #include "bme280.h"
+#include "ds3231.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -45,6 +46,8 @@
 #define BME280_I2C_ADDR         0x76U
 #define LCD_PAGE_COUNT          3U
 
+#define DS3231_I2C_ADDR         0x68U
+
 typedef enum
 {
     SYSTEM_STATE_INIT = 0,
@@ -81,6 +84,9 @@ typedef struct
     int32_t air_temperature_c_x100;
     uint32_t air_humidity_percent_x100;
     uint8_t bme280_is_available;
+
+    DS3231_DateTime_t timestamp;
+    uint8_t rtc_is_available;
 
     PlantStatus_t plant_status;
 } PlantMonitorData_t;
@@ -199,21 +205,6 @@ static PlantStatus_t PlantMonitor_CalculateStatus(const PlantMonitorData_t *data
     }
 }
 
-/*
- * Simple blocking delay.
- * This delay is used only for the initial board bring-up test.
- */
-static void delay(void){
-	for (volatile uint32_t i = 0; i < 300000; i++);
-}
-
-/*
- * Configure PA2 and PA3 for USART2.
- *
- * PA2 = USART2_TX
- * PA3 = USART2_RX
- * AF1 = USART2 alternate function on STM32G071.
- */
 /*
  * Configure PA2 and PA3 for USART2.
  *
@@ -519,6 +510,40 @@ static void BME280_ReadEnvironment(void){
     }
 }
 
+static void DS3231_Application_Init(void){
+    DS3231_DateTime_t date_time;
+
+    DS3231_Init(&g_i2c1_handle, DS3231_I2C_ADDR);
+
+    UART_Log("[DS3231] Initializing RTC\r\n");
+
+    if (DS3231_GetDateTime(&date_time)){
+        g_plant_data.timestamp = date_time;
+        g_plant_data.rtc_is_available = 1U;
+        UART_Log("[DS3231] RTC ready\r\n");
+    }
+    else{
+        g_plant_data.rtc_is_available = 0U;
+        UART_Log("[DS3231] RTC read failed\r\n");
+    }
+}
+
+static void DS3231_ReadTimestamp(void){
+    DS3231_DateTime_t date_time;
+
+    if (g_plant_data.rtc_is_available == 0U){
+        return;
+    }
+
+    if (DS3231_GetDateTime(&date_time)){
+        g_plant_data.timestamp = date_time;
+    }
+    else{
+        g_plant_data.rtc_is_available = 0U;
+        UART_Log("[DS3231] Timestamp read failed\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -533,6 +558,7 @@ int main(void)
     LCD_Init(&g_i2c1_handle, LCD_I2C_ADDR);
 
     BME280_Application_Init();
+    DS3231_Application_Init();
 
     ADC_GPIO_Init();
     ADC_Init();
@@ -551,11 +577,12 @@ int main(void)
         switch (g_current_state)
         {
             case SYSTEM_STATE_READ_SENSORS:
+            	DS3231_ReadTimestamp();
             	g_plant_data.soil_raw = ADC_ReadChannel(ADC_CHANNEL_1);
             	g_plant_data.light_raw = ADC_ReadChannel(ADC_CHANNEL_0);
             	BME280_ReadEnvironment();
 
-            	UART_Log("[SENSORS] Soil, light and environment updated\r\n");
+            	UART_Log("[SENSORS] Timestamp, soil, light and environment updated\r\n");
 
                 g_current_state = SYSTEM_STATE_PROCESS_DATA;
                 break;
@@ -592,12 +619,52 @@ int main(void)
 
             case SYSTEM_STATE_PRINT_LOG:
             {
-                char log_buffer[160];
+                char log_buffer[220];
 
-                if (g_plant_data.bme280_is_available){
-                    snprintf(log_buffer, sizeof(log_buffer),
+                if (g_plant_data.rtc_is_available && g_plant_data.bme280_is_available){
+                    snprintf(log_buffer,
+                             sizeof(log_buffer),
+                             "[LOG] 20%02u-%02u-%02u %02u:%02u:%02u | soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, temp=%ld.%02ldC, hum=%lu.%02lu%%, status=%s\r\n",
+                             g_plant_data.timestamp.year,
+                             g_plant_data.timestamp.month,
+                             g_plant_data.timestamp.date,
+                             g_plant_data.timestamp.hours,
+                             g_plant_data.timestamp.minutes,
+                             g_plant_data.timestamp.seconds,
+                             g_plant_data.soil_raw,
+                             g_plant_data.soil_percent,
+                             g_plant_data.light_raw,
+                             g_plant_data.light_percent,
+                             g_plant_data.air_temperature_c_x100 / 100,
+                             g_plant_data.air_temperature_c_x100 % 100,
+                             g_plant_data.air_humidity_percent_x100 / 100U,
+                             g_plant_data.air_humidity_percent_x100 % 100U,
+                             PlantStatus_ToString(g_plant_data.plant_status));
+                }
+                else if (g_plant_data.rtc_is_available){
+                    snprintf(log_buffer,
+                             sizeof(log_buffer),
+                             "[LOG] 20%02u-%02u-%02u %02u:%02u:%02u | soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, env=N/A, status=%s\r\n",
+                             g_plant_data.timestamp.year,
+                             g_plant_data.timestamp.month,
+                             g_plant_data.timestamp.date,
+                             g_plant_data.timestamp.hours,
+                             g_plant_data.timestamp.minutes,
+                             g_plant_data.timestamp.seconds,
+                             g_plant_data.soil_raw,
+                             g_plant_data.soil_percent,
+                             g_plant_data.light_raw,
+                             g_plant_data.light_percent,
+                             PlantStatus_ToString(g_plant_data.plant_status));
+                }
+                else if (g_plant_data.bme280_is_available){
+                    snprintf(log_buffer,
+                             sizeof(log_buffer),
                              "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, temp=%ld.%02ldC, hum=%lu.%02lu%%, status=%s\r\n",
-                             g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent,
+                             g_plant_data.soil_raw,
+                             g_plant_data.soil_percent,
+                             g_plant_data.light_raw,
+                             g_plant_data.light_percent,
                              g_plant_data.air_temperature_c_x100 / 100,
                              g_plant_data.air_temperature_c_x100 % 100,
                              g_plant_data.air_humidity_percent_x100 / 100U,
@@ -605,9 +672,13 @@ int main(void)
                              PlantStatus_ToString(g_plant_data.plant_status));
                 }
                 else{
-                    snprintf(log_buffer, sizeof(log_buffer),
+                    snprintf(log_buffer,
+                             sizeof(log_buffer),
                              "[LOG] soil_raw=%u, soil=%u%%, light_raw=%u, light=%u%%, env=N/A, status=%s\r\n",
-                             g_plant_data.soil_raw, g_plant_data.soil_percent, g_plant_data.light_raw, g_plant_data.light_percent,
+                             g_plant_data.soil_raw,
+                             g_plant_data.soil_percent,
+                             g_plant_data.light_raw,
+                             g_plant_data.light_percent,
                              PlantStatus_ToString(g_plant_data.plant_status));
                 }
 
@@ -616,7 +687,6 @@ int main(void)
                 g_current_state = SYSTEM_STATE_WAIT;
                 break;
             }
-
             case SYSTEM_STATE_WAIT:
             {
                 UART_Log("[WAIT] Waiting before next measurement cycle\r\n");
