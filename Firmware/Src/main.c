@@ -53,6 +53,8 @@
 #define SD_CS_GPIO_PORT         GPIOA
 #define SD_CS_GPIO_PIN          GPIO_PIN_NO_4
 
+#define SD_TEST_BLOCK_ADDR      100000U
+
 typedef enum
 {
     SYSTEM_STATE_INIT = 0,
@@ -700,8 +702,113 @@ static void SD_ReadBlock_Test(void)
     }
 }
 
-int main(void)
+static void SD_WriteBlock_Test(void)
 {
+    uint8_t original_block[512];
+    uint8_t write_block[512];
+    uint8_t verify_block[512];
+
+    uint8_t test_ok = 1U;
+
+    UART_Log("[SD] Write block test started\r\n");
+
+    /*
+     * Step 1:
+     * Read original block so we can restore it after the test.
+     */
+    UART_Log("[SD] Backing up test block\r\n");
+
+    if (!SD_Card_ReadBlock(SD_TEST_BLOCK_ADDR, original_block))
+    {
+        UART_Log("[SD] Failed to read original test block\r\n");
+        return;
+    }
+
+    /*
+     * Step 2:
+     * Prepare a test pattern.
+     */
+    for (uint16_t i = 0U; i < 512U; i++)
+    {
+        write_block[i] = 0xA5U;
+    }
+
+    write_block[0] = 'P';
+    write_block[1] = 'L';
+    write_block[2] = 'A';
+    write_block[3] = 'N';
+    write_block[4] = 'T';
+    write_block[5] = '_';
+    write_block[6] = 'S';
+    write_block[7] = 'D';
+    write_block[8] = '_';
+    write_block[9] = 'T';
+    write_block[10] = 'E';
+    write_block[11] = 'S';
+    write_block[12] = 'T';
+
+    /*
+     * Step 3:
+     * Write the test pattern.
+     */
+    UART_Log("[SD] Writing test pattern\r\n");
+
+    if (!SD_Card_WriteBlock(SD_TEST_BLOCK_ADDR, write_block))
+    {
+        UART_Log("[SD] Test block write failed\r\n");
+        return;
+    }
+
+    /*
+     * Step 4:
+     * Read the same block back.
+     */
+    UART_Log("[SD] Reading test block back\r\n");
+
+    if (!SD_Card_ReadBlock(SD_TEST_BLOCK_ADDR, verify_block))
+    {
+        UART_Log("[SD] Failed to read test block back\r\n");
+        return;
+    }
+
+    /*
+     * Step 5:
+     * Verify first 512 bytes match exactly.
+     */
+    for (uint16_t i = 0U; i < 512U; i++)
+    {
+        if (verify_block[i] != write_block[i])
+        {
+            test_ok = 0U;
+            break;
+        }
+    }
+
+    if (test_ok)
+    {
+        UART_Log("[SD] Write/read verify OK\r\n");
+    }
+    else
+    {
+        UART_Log("[SD] Write/read verify FAILED\r\n");
+    }
+
+    /*
+     * Step 6:
+     * Restore the original block.
+     */
+    UART_Log("[SD] Restoring original block\r\n");
+
+    if (!SD_Card_WriteBlock(SD_TEST_BLOCK_ADDR, original_block))
+    {
+        UART_Log("[SD] Failed to restore original block\r\n");
+        return;
+    }
+
+    UART_Log("[SD] Original block restored\r\n");
+}
+
+int main(void){
 	USART2_GPIO_Init();
     USART2_Debug_Init();
 
@@ -717,6 +824,7 @@ int main(void)
     DS3231_Application_Init();
     SD_CardFullInit_Test();
     SD_ReadBlock_Test();
+    SD_WriteBlock_Test();
 
     ADC_GPIO_Init();
     ADC_Init();

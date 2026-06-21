@@ -4,6 +4,9 @@
 
 #define SD_DATA_TOKEN_START_BLOCK   0xFEU
 #define SD_BLOCK_SIZE               512U
+#define SD_DATA_RESPONSE_MASK       0x1FU
+#define SD_DATA_RESPONSE_ACCEPTED   0x05U
+#define SD_WRITE_TIMEOUT            50000U
 
 static SPI_Handle_t *g_sd_spi_handle = NULL;
 static GPIO_RegDef_t *g_sd_cs_gpio_port = NULL;
@@ -328,6 +331,85 @@ uint8_t SD_Card_ReadBlock(uint32_t block_addr, uint8_t *rx_buffer){
 
     SD_CS_HIGH();
     SD_SPI_TransferByte(0xFFU);
+
+    return 1U;
+}
+
+uint8_t SD_Card_WriteBlock(uint32_t block_addr, const uint8_t *tx_buffer){
+    uint8_t response = 0xFFU;
+    uint8_t data_response = 0xFFU;
+    uint8_t busy = 0x00U;
+    uint16_t timeout = 0U;
+
+    if ((g_sd_spi_handle == NULL) || (g_sd_cs_gpio_port == NULL) || (tx_buffer == NULL)){
+        return 0U;
+    }
+
+    /*
+     * For SDHC cards, the address argument is a block number
+     * Our card was detected as SDHC, so block_addr is used directly
+     */
+    if (g_sd_card_type != SD_CARD_TYPE_SDHC){
+        return 0U;
+    }
+
+    /* CMD24 = WRITE_SINGLE_BLOCK */
+    response = SD_SendCommand(24U, block_addr, 0x01U);
+
+    if (response != SD_RESPONSE_READY){
+        SD_CS_HIGH();
+        SD_SPI_TransferByte(0xFFU);
+        return 0U;
+    }
+
+    /*
+     * Send start block token
+     * 0xFE means: the 512-byte data block starts now
+     */
+    SD_SPI_TransferByte(SD_DATA_TOKEN_START_BLOCK);
+
+    /* Send 512 bytes of data */
+    for (uint16_t i = 0U; i < SD_BLOCK_SIZE; i++){
+        SD_SPI_TransferByte(tx_buffer[i]);
+    }
+
+    /*
+     * Send dummy CRC bytes
+     * CRC is not used here
+     */
+    SD_SPI_TransferByte(0xFFU);
+    SD_SPI_TransferByte(0xFFU);
+
+    /*
+     * Read data response token
+     * Accepted response is 0x05 in the lower 5 bits
+     */
+    data_response = SD_SPI_TransferByte(0xFFU);
+
+    if ((data_response & SD_DATA_RESPONSE_MASK) != SD_DATA_RESPONSE_ACCEPTED){
+        SD_CS_HIGH();
+        SD_SPI_TransferByte(0xFFU);
+        return 0U;
+    }
+
+    /*
+     * Wait until the card finishes internal write operation
+     * While busy, the card returns 0x00
+     * When ready, it returns 0xFF
+     */
+    for (timeout = 0U; timeout < SD_WRITE_TIMEOUT; timeout++){
+        busy = SD_SPI_TransferByte(0xFFU);
+        if (busy == 0xFFU){
+            break;
+        }
+    }
+
+    SD_CS_HIGH();
+    SD_SPI_TransferByte(0xFFU);
+
+    if (busy != 0xFFU){
+        return 0U;
+    }
 
     return 1U;
 }

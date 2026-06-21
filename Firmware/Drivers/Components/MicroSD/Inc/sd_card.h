@@ -35,5 +35,6 @@ uint8_t SD_Card_InitCard(void);
 uint8_t SD_Card_GetType(void);
 
 uint8_t SD_Card_ReadBlock(uint32_t block_addr, uint8_t *rx_buffer);
+uint8_t SD_Card_WriteBlock(uint32_t block_addr, const uint8_t *tx_buffer);
 
 #endif
