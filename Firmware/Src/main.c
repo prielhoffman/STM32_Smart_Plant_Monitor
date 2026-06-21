@@ -661,6 +661,45 @@ static void SD_CardFullInit_Test(void)
     }
 }
 
+static void SD_ReadBlock_Test(void)
+{
+    uint8_t block_buffer[512];
+    char log_buffer[100];
+
+    UART_Log("[SD] Reading block 2048\r\n");
+
+    if (SD_Card_ReadBlock(2048U, block_buffer))
+    {
+        UART_Log("[SD] Block read successfully\r\n");
+
+        snprintf(log_buffer,
+                 sizeof(log_buffer),
+                 "[SD] First 16 bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+                 block_buffer[0],
+                 block_buffer[1],
+                 block_buffer[2],
+                 block_buffer[3],
+                 block_buffer[4],
+                 block_buffer[5],
+                 block_buffer[6],
+                 block_buffer[7],
+                 block_buffer[8],
+                 block_buffer[9],
+                 block_buffer[10],
+                 block_buffer[11],
+                 block_buffer[12],
+                 block_buffer[13],
+                 block_buffer[14],
+                 block_buffer[15]);
+
+        UART_Log(log_buffer);
+    }
+    else
+    {
+        UART_Log("[SD] Block read failed\r\n");
+    }
+}
+
 int main(void)
 {
 	USART2_GPIO_Init();
@@ -677,6 +716,7 @@ int main(void)
     BME280_Application_Init();
     DS3231_Application_Init();
     SD_CardFullInit_Test();
+    SD_ReadBlock_Test();
 
     ADC_GPIO_Init();
     ADC_Init();

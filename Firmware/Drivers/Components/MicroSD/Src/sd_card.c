@@ -2,6 +2,9 @@
 
 #include <stddef.h>
 
+#define SD_DATA_TOKEN_START_BLOCK   0xFEU
+#define SD_BLOCK_SIZE               512U
+
 static SPI_Handle_t *g_sd_spi_handle = NULL;
 static GPIO_RegDef_t *g_sd_cs_gpio_port = NULL;
 static uint8_t g_sd_cs_pin = 0U;
@@ -264,4 +267,67 @@ uint8_t SD_Card_InitCard(void){
 
 uint8_t SD_Card_GetType(void){
     return g_sd_card_type;
+}
+
+uint8_t SD_Card_ReadBlock(uint32_t block_addr, uint8_t *rx_buffer){
+    uint8_t response = 0xFFU;
+    uint8_t token = 0xFFU;
+    uint16_t timeout = 0U;
+
+    if ((g_sd_spi_handle == NULL) || (g_sd_cs_gpio_port == NULL) || (rx_buffer == NULL)){
+        return 0U;
+    }
+
+    /*
+     * For SDHC cards, the address argument is a block number
+     * Our card was detected as SDHC, so block_addr is used directly
+     */
+    if (g_sd_card_type != SD_CARD_TYPE_SDHC){
+        return 0U;
+    }
+
+    /*
+     * CMD17 = READ_SINGLE_BLOCK
+     * For SDHC, argument is the block number
+     */
+    response = SD_SendCommand(17U, block_addr, 0x01U);
+    if (response != SD_RESPONSE_READY){
+        SD_CS_HIGH();
+        SD_SPI_TransferByte(0xFFU);
+        return 0U;
+    }
+
+    /*
+     * Wait for data token 0xFE
+     * The card may need some time before it starts sending the block
+     */
+    for (timeout = 0U; timeout < 50000U; timeout++){
+        token = SD_SPI_TransferByte(0xFFU);
+        if (token == SD_DATA_TOKEN_START_BLOCK){
+            break;
+        }
+    }
+
+    if (token != SD_DATA_TOKEN_START_BLOCK){
+        SD_CS_HIGH();
+        SD_SPI_TransferByte(0xFFU);
+        return 0U;
+    }
+
+    /* Read 512 bytes of block data */
+    for (uint16_t i = 0U; i < SD_BLOCK_SIZE; i++){
+        rx_buffer[i] = SD_SPI_TransferByte(0xFFU);
+    }
+
+    /*
+     * Read and ignore 2 CRC bytes
+     * CRC is not used here
+     */
+    SD_SPI_TransferByte(0xFFU);
+    SD_SPI_TransferByte(0xFFU);
+
+    SD_CS_HIGH();
+    SD_SPI_TransferByte(0xFFU);
+
+    return 1U;
 }

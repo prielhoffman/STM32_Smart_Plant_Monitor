@@ -34,4 +34,6 @@ uint8_t SD_Card_SendCMD0(void);
 uint8_t SD_Card_InitCard(void);
 uint8_t SD_Card_GetType(void);
 
+uint8_t SD_Card_ReadBlock(uint32_t block_addr, uint8_t *rx_buffer);
+
 #endif
