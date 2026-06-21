@@ -54,7 +54,7 @@
 #define SD_CS_GPIO_PORT         GPIOA
 #define SD_CS_GPIO_PIN          GPIO_PIN_NO_4
 
-#define SD_TEST_BLOCK_ADDR      100000U
+#define PLANT_LOG_FILE_NAME     "plantlog.csv"
 
 typedef enum
 {
@@ -629,7 +629,7 @@ static void SPI1_SD_Init(void){
     SPI_PeripheralControl(SPI1, ENABLE);
 }
 
-static void SD_CardFullInit_Test(void)
+static void SD_Card_Application_Init(void)
 {
     uint8_t init_ok = 0U;
 
@@ -664,201 +664,117 @@ static void SD_CardFullInit_Test(void)
     }
 }
 
-static void SD_ReadBlock_Test(void)
+static void SD_LogPlantDataToCSV(void)
 {
-    uint8_t block_buffer[512];
-    char log_buffer[100];
+    static FATFS fs;
+    static uint8_t is_filesystem_mounted = 0U;
 
-    UART_Log("[SD] Reading block 2048\r\n");
+    FIL file;
+    FRESULT result;
+    UINT bytes_written = 0U;
+    char csv_line[180];
 
-    if (SD_Card_ReadBlock(2048U, block_buffer))
+    if (is_filesystem_mounted == 0U)
     {
-        UART_Log("[SD] Block read successfully\r\n");
+        UART_Log("[FS] Mounting filesystem for CSV\r\n");
+
+        result = f_mount(&fs, "", 1U);
+
+        if (result != FR_OK)
+        {
+            char log_buffer[60];
+
+            snprintf(log_buffer,
+                     sizeof(log_buffer),
+                     "[FS] CSV mount failed, error=%d\r\n",
+                     result);
+
+            UART_Log(log_buffer);
+            return;
+        }
+
+        is_filesystem_mounted = 1U;
+        UART_Log("[FS] Filesystem mounted for CSV\r\n");
+    }
+
+    result = f_open(&file, PLANT_LOG_FILE_NAME, FA_OPEN_ALWAYS | FA_WRITE);
+
+    if (result != FR_OK)
+    {
+        char log_buffer[60];
 
         snprintf(log_buffer,
                  sizeof(log_buffer),
-                 "[SD] First 16 bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
-                 block_buffer[0],
-                 block_buffer[1],
-                 block_buffer[2],
-                 block_buffer[3],
-                 block_buffer[4],
-                 block_buffer[5],
-                 block_buffer[6],
-                 block_buffer[7],
-                 block_buffer[8],
-                 block_buffer[9],
-                 block_buffer[10],
-                 block_buffer[11],
-                 block_buffer[12],
-                 block_buffer[13],
-                 block_buffer[14],
-                 block_buffer[15]);
+                 "[FS] CSV open failed, error=%d\r\n",
+                 result);
 
         UART_Log(log_buffer);
-    }
-    else
-    {
-        UART_Log("[SD] Block read failed\r\n");
-    }
-}
-
-static void SD_WriteBlock_Test(void)
-{
-    uint8_t original_block[512];
-    uint8_t write_block[512];
-    uint8_t verify_block[512];
-
-    uint8_t test_ok = 1U;
-
-    UART_Log("[SD] Write block test started\r\n");
-
-    /*
-     * Step 1:
-     * Read original block so we can restore it after the test.
-     */
-    UART_Log("[SD] Backing up test block\r\n");
-
-    if (!SD_Card_ReadBlock(SD_TEST_BLOCK_ADDR, original_block))
-    {
-        UART_Log("[SD] Failed to read original test block\r\n");
         return;
     }
 
-    /*
-     * Step 2:
-     * Prepare a test pattern.
-     */
-    for (uint16_t i = 0U; i < 512U; i++)
+    if (f_size(&file) == 0U)
     {
-        write_block[i] = 0xA5U;
-    }
+        const char csv_header[] =
+            "timestamp,soil_raw,soil_percent,light_raw,light_percent,temp_c,humidity_percent,status\r\n";
 
-    write_block[0] = 'P';
-    write_block[1] = 'L';
-    write_block[2] = 'A';
-    write_block[3] = 'N';
-    write_block[4] = 'T';
-    write_block[5] = '_';
-    write_block[6] = 'S';
-    write_block[7] = 'D';
-    write_block[8] = '_';
-    write_block[9] = 'T';
-    write_block[10] = 'E';
-    write_block[11] = 'S';
-    write_block[12] = 'T';
+        result = f_write(&file,
+                         csv_header,
+                         sizeof(csv_header) - 1U,
+                         &bytes_written);
 
-    /*
-     * Step 3:
-     * Write the test pattern.
-     */
-    UART_Log("[SD] Writing test pattern\r\n");
-
-    if (!SD_Card_WriteBlock(SD_TEST_BLOCK_ADDR, write_block))
-    {
-        UART_Log("[SD] Test block write failed\r\n");
-        return;
-    }
-
-    /*
-     * Step 4:
-     * Read the same block back.
-     */
-    UART_Log("[SD] Reading test block back\r\n");
-
-    if (!SD_Card_ReadBlock(SD_TEST_BLOCK_ADDR, verify_block))
-    {
-        UART_Log("[SD] Failed to read test block back\r\n");
-        return;
-    }
-
-    /*
-     * Step 5:
-     * Verify first 512 bytes match exactly.
-     */
-    for (uint16_t i = 0U; i < 512U; i++)
-    {
-        if (verify_block[i] != write_block[i])
+        if ((result != FR_OK) || (bytes_written != (sizeof(csv_header) - 1U)))
         {
-            test_ok = 0U;
-            break;
+            UART_Log("[FS] CSV header write failed\r\n");
+            f_close(&file);
+            return;
         }
+
+        UART_Log("[FS] CSV header written\r\n");
     }
 
-    if (test_ok)
+    result = f_lseek(&file, f_size(&file));
+
+    if (result != FR_OK)
     {
-        UART_Log("[SD] Write/read verify OK\r\n");
-    }
-    else
-    {
-        UART_Log("[SD] Write/read verify FAILED\r\n");
-    }
-
-    /*
-     * Step 6:
-     * Restore the original block.
-     */
-    UART_Log("[SD] Restoring original block\r\n");
-
-    if (!SD_Card_WriteBlock(SD_TEST_BLOCK_ADDR, original_block))
-    {
-        UART_Log("[SD] Failed to restore original block\r\n");
-        return;
-    }
-
-    UART_Log("[SD] Original block restored\r\n");
-}
-
-static void FatFs_Test(void){
-    static FATFS fs;
-    static FIL file;
-
-    FRESULT result;
-    UINT bytes_written = 0U;
-    const char test_text[] = "Hello from STM32 Smart Plant Monitor\r\n";
-
-    UART_Log("[FS] Mounting filesystem\r\n");
-
-    /*
-     * Mount drive 0
-     * The empty string "" means the default logical drive
-     */
-    result = f_mount(&fs, "", 1U);
-
-    if (result != FR_OK){
-        char log_buffer[60];
-        snprintf(log_buffer, sizeof(log_buffer), "[FS] Mount failed, error=%d\r\n", result);
-        UART_Log(log_buffer);
-        return;
-    }
-
-    UART_Log("[FS] Filesystem mounted successfully\r\n");
-
-    /* Create or overwrite a simple test file */
-    result = f_open(&file, "test.txt", FA_CREATE_ALWAYS | FA_WRITE);
-
-    if (result != FR_OK){
-        char log_buffer[60];
-        snprintf(log_buffer, sizeof(log_buffer), "[FS] f_open failed, error=%d\r\n", result);
-        UART_Log(log_buffer);
-        return;
-    }
-
-    UART_Log("[FS] test.txt opened successfully\r\n");
-
-    result = f_write(&file, test_text, sizeof(test_text) - 1U, &bytes_written);
-
-    if ((result != FR_OK) || (bytes_written != (sizeof(test_text) - 1U))){
-        char log_buffer[80];
-        snprintf(log_buffer, sizeof(log_buffer), "[FS] f_write failed, error=%d, written=%lu\r\n", result, (unsigned long)bytes_written);
-        UART_Log(log_buffer);
+        UART_Log("[FS] CSV seek failed\r\n");
         f_close(&file);
         return;
     }
 
-    UART_Log("[FS] test.txt written successfully\r\n");
+    snprintf(csv_line,
+             sizeof(csv_line),
+             "20%02u-%02u-%02u %02u:%02u:%02u,%u,%u,%u,%u,%ld.%02ld,%lu.%02lu,%s\r\n",
+             g_plant_data.timestamp.year,
+             g_plant_data.timestamp.month,
+             g_plant_data.timestamp.date,
+             g_plant_data.timestamp.hours,
+             g_plant_data.timestamp.minutes,
+             g_plant_data.timestamp.seconds,
+             g_plant_data.soil_raw,
+             g_plant_data.soil_percent,
+             g_plant_data.light_raw,
+             g_plant_data.light_percent,
+             g_plant_data.air_temperature_c_x100 / 100,
+             g_plant_data.air_temperature_c_x100 % 100,
+             g_plant_data.air_humidity_percent_x100 / 100U,
+             g_plant_data.air_humidity_percent_x100 % 100U,
+             PlantStatus_ToString(g_plant_data.plant_status));
+
+    result = f_write(&file,
+                     csv_line,
+                     strlen(csv_line),
+                     &bytes_written);
+
+    if ((result != FR_OK) || (bytes_written != strlen(csv_line)))
+    {
+        UART_Log("[FS] CSV data write failed\r\n");
+        f_close(&file);
+        return;
+    }
+
     f_close(&file);
-    UART_Log("[FS] test.txt closed successfully\r\n");
+
+    UART_Log("[FS] Plant data logged to CSV\r\n");
 }
 
 int main(void){
@@ -875,8 +791,7 @@ int main(void){
 
     BME280_Application_Init();
     DS3231_Application_Init();
-    SD_CardFullInit_Test();
-    FatFs_Test();
+    SD_Card_Application_Init();
 
     ADC_GPIO_Init();
     ADC_Init();
@@ -1001,7 +916,7 @@ int main(void){
                 }
 
                 UART_Log(log_buffer);
-
+                SD_LogPlantDataToCSV();
                 g_current_state = SYSTEM_STATE_WAIT;
                 break;
             }
