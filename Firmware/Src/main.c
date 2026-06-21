@@ -626,10 +626,9 @@ static void SPI1_SD_Init(void){
     SPI_PeripheralControl(SPI1, ENABLE);
 }
 
-static void SD_CMD0_Test(void)
+static void SD_CardFullInit_Test(void)
 {
-    uint8_t response = 0xFFU;
-    char log_buffer[80];
+    uint8_t init_ok = 0U;
 
     UART_Log("[SD] Initializing SPI interface\r\n");
 
@@ -639,24 +638,26 @@ static void SD_CMD0_Test(void)
 
     SD_Card_Init(&g_spi1_handle, SD_CS_GPIO_PORT, SD_CS_GPIO_PIN);
 
-    UART_Log("[SD] Sending CMD0\r\n");
+    UART_Log("[SD] Initializing card\r\n");
 
-    response = SD_Card_SendCMD0();
+    init_ok = SD_Card_InitCard();
 
-    snprintf(log_buffer,
-             sizeof(log_buffer),
-             "[SD] CMD0 response = 0x%02X\r\n",
-             response);
-
-    UART_Log(log_buffer);
-
-    if (response == SD_CMD0_RESPONSE_IDLE_STATE)
+    if (init_ok)
     {
-        UART_Log("[SD] CMD0 OK - card entered idle state\r\n");
+        UART_Log("[SD] Card initialized successfully\r\n");
+
+        if (SD_Card_GetType() == SD_CARD_TYPE_SDHC)
+        {
+            UART_Log("[SD] Card type: SDHC\r\n");
+        }
+        else
+        {
+            UART_Log("[SD] Card type: unknown\r\n");
+        }
     }
     else
     {
-        UART_Log("[SD] CMD0 failed - card did not enter idle state\r\n");
+        UART_Log("[SD] Card initialization failed\r\n");
     }
 }
 
@@ -675,7 +676,7 @@ int main(void)
 
     BME280_Application_Init();
     DS3231_Application_Init();
-    SD_CMD0_Test();
+    SD_CardFullInit_Test();
 
     ADC_GPIO_Init();
     ADC_Init();
