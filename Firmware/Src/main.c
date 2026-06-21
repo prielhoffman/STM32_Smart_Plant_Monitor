@@ -8,6 +8,7 @@
 #include "bme280.h"
 #include "ds3231.h"
 #include "sd_card.h"
+#include "ff.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -808,6 +809,58 @@ static void SD_WriteBlock_Test(void)
     UART_Log("[SD] Original block restored\r\n");
 }
 
+static void FatFs_Test(void){
+    static FATFS fs;
+    static FIL file;
+
+    FRESULT result;
+    UINT bytes_written = 0U;
+    const char test_text[] = "Hello from STM32 Smart Plant Monitor\r\n";
+
+    UART_Log("[FS] Mounting filesystem\r\n");
+
+    /*
+     * Mount drive 0
+     * The empty string "" means the default logical drive
+     */
+    result = f_mount(&fs, "", 1U);
+
+    if (result != FR_OK){
+        char log_buffer[60];
+        snprintf(log_buffer, sizeof(log_buffer), "[FS] Mount failed, error=%d\r\n", result);
+        UART_Log(log_buffer);
+        return;
+    }
+
+    UART_Log("[FS] Filesystem mounted successfully\r\n");
+
+    /* Create or overwrite a simple test file */
+    result = f_open(&file, "test.txt", FA_CREATE_ALWAYS | FA_WRITE);
+
+    if (result != FR_OK){
+        char log_buffer[60];
+        snprintf(log_buffer, sizeof(log_buffer), "[FS] f_open failed, error=%d\r\n", result);
+        UART_Log(log_buffer);
+        return;
+    }
+
+    UART_Log("[FS] test.txt opened successfully\r\n");
+
+    result = f_write(&file, test_text, sizeof(test_text) - 1U, &bytes_written);
+
+    if ((result != FR_OK) || (bytes_written != (sizeof(test_text) - 1U))){
+        char log_buffer[80];
+        snprintf(log_buffer, sizeof(log_buffer), "[FS] f_write failed, error=%d, written=%lu\r\n", result, (unsigned long)bytes_written);
+        UART_Log(log_buffer);
+        f_close(&file);
+        return;
+    }
+
+    UART_Log("[FS] test.txt written successfully\r\n");
+    f_close(&file);
+    UART_Log("[FS] test.txt closed successfully\r\n");
+}
+
 int main(void){
 	USART2_GPIO_Init();
     USART2_Debug_Init();
@@ -823,8 +876,7 @@ int main(void){
     BME280_Application_Init();
     DS3231_Application_Init();
     SD_CardFullInit_Test();
-    SD_ReadBlock_Test();
-    SD_WriteBlock_Test();
+    FatFs_Test();
 
     ADC_GPIO_Init();
     ADC_Init();
