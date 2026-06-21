@@ -30,8 +30,8 @@
 #define SOIL_WET_RAW            1100U
 #define SOIL_DRY_RAW            2650U
 
-#define LIGHT_DARK_RAW          1560U
-#define LIGHT_BRIGHT_RAW        3800U
+#define LIGHT_DARK_RAW          1500U
+#define LIGHT_BRIGHT_RAW        2700U
 
 #define SOIL_DRY_THRESHOLD      2300U
 #define LIGHT_LOW_THRESHOLD     1800U
